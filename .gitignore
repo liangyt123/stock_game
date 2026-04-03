@@ -1,0 +1,6 @@
+# Git ignore for stock_game
+main
+test_logs/
+*.sh.log
+*.txt.log
+.DS_Store

@@ -260,7 +260,7 @@ type AchievementData struct {
 	Achievements    map[string]Achievement `json:"achievements"`
 	TotalGames      int                    `json:"total_games"`
 	TotalProfit     float64                `json:"total_profit"`
-	MaxSingleProfit float64               `json:"max_single_profit"`
+	MaxSingleProfit float64                `json:"max_single_profit"`
 	CrashesEscaped  int                    `json:"crashes_escaped"`
 	BustTimes       int                    `json:"bust_times"`
 	TotalSRanks     int                    `json:"total_sranks"`
@@ -411,15 +411,20 @@ type GameState struct {
 	PlayerOrderShares int
 	PlayerOrderCash   float64
 
-	TradePoints []TradePoint     // 上帝视角复盘记录点
-	MarketLogs     []string         // 实时市场动态日志
-	Chronicle      []ChronicleEntry // 操盘编年史
-	DailyFortune   string           // 今日运势
-	InitialAIAssets map[string]float64 // AI 初始资产
-	IntelUsedThisTurn bool             // 本回合是否已使用情报
-	DayHigh        float64          // 今日最高价
-	DayLow         float64          // 今日最低价
-	VolumeHistory  []int            // 成交量历史
+	TradePoints       []TradePoint       // 上帝视角复盘记录点
+	MarketLogs        []string           // 实时市场动态日志
+	Chronicle         []ChronicleEntry   // 操盘编年史
+	DailyFortune      string             // 今日运势
+	InitialAIAssets   map[string]float64 // AI 初始资产
+	IntelUsedThisTurn bool               // 本回合是否已使用情报
+	DayHigh           float64            // 今日最高价
+	DayLow            float64            // 今日最低价
+	VolumeHistory     []int              // 成交量历史
+
+	// 残局模式专属
+	IsEndgameMode    bool             // 是否为残局模式
+	EndgameScenario  *EndgameScenario // 残局场景信息
+	EndgameStartTurn int              // 残局开始时的总回合数
 }
 
 // ===== 反身性分析系统 =====
@@ -502,6 +507,467 @@ type HistoricalStateCache struct {
 	States []GameStateSnapshot
 }
 
+// ===== 分析缓存（性能优化） =====
+
+type AnalysisCache struct {
+	LastAnalysis   AdvancedAnalysis
+	LastUpdateTurn int  // 上次更新的回合数（Day + Session）
+	IsValid        bool // 缓存是否有效
+}
+
+// ===== 游戏统计系统 =====
+
+type GameStats struct {
+	TotalGames              int            // 总游戏场次
+	CrashPredictionHits     int            // 崩盘预测命中次数
+	CrashPredictionTotal    int            // 崩盘预测总次数
+	ExitTimingErrors        []int          // 离场时机误差（实际离场日 - 建议离场日）
+	ReflexivityPatternsSeen map[string]int // 见过的反身性模式
+}
+
+// ===== 游戏设置 =====
+
+type GameSettings struct {
+	ShowAdvancedAnalysis bool   // 是否显示高级分析
+	AnalysisDetail       string // "simple", "detailed", "expert"
+	ShowEducation        bool   // 是否显示教学提示
+}
+
+// ===== 残局模式 =====
+
+type EndgameScenario struct {
+	ID              string
+	Name            string
+	Description     string
+	Difficulty      string // "简单", "中等", "困难", "地狱"
+	StartDay        int
+	StartSession    string
+	InitialPrice    float64
+	PriceChange     float64 // 累计涨跌幅（相对开盘价10元）
+	PlayerCash      float64
+	PlayerShares    int
+	PlayerFrozen    int      // 冻结股数
+	AIExitRatio     float64  // 已逃跑AI比例
+	WhaleExitCount  int      // 已逃跑大资金数量
+	CrashWarning    int      // 崩盘预警等级
+	ConsecutiveFall int      // 连续下跌天数
+	ConsecutiveRise int      // 连续上涨天数
+	EventPreset     *Event   // 预设当前事件
+	MarginDebt      float64  // 配资欠款
+	IsMonsterStock  bool     // 是否妖股
+	TargetProfit    float64  // 目标收益率（完美通关标准）
+	TimeLimit       int      // 剩余时段数（0=不限制）
+	TeachingPoints  []string // 教学要点
+}
+
+// 全局设置和统计
+var GlobalSettings = GameSettings{
+	ShowAdvancedAnalysis: true,
+	AnalysisDetail:       "detailed",
+	ShowEducation:        true,
+}
+
+var GlobalStats = GameStats{
+	ReflexivityPatternsSeen: make(map[string]int),
+}
+
+var GlobalCache = AnalysisCache{
+	IsValid: false,
+}
+
+// ===== 残局场景定义 =====
+
+var EndgameScenarios = []EndgameScenario{
+	{
+		ID:              "endgame_1",
+		Name:            "逃顶挑战",
+		Description:     "Day 8早盘，股价已暴涨80%，70%大资金已出逃。崩盘概率极高，你能在雪崩前安全离场吗？",
+		Difficulty:      "中等",
+		StartDay:        8,
+		StartSession:    "早盘",
+		InitialPrice:    18.0,
+		PriceChange:     0.80,
+		PlayerCash:      20000,
+		PlayerShares:    4444, // 约8万市值
+		PlayerFrozen:    0,
+		AIExitRatio:     0.70,
+		WhaleExitCount:  5,
+		CrashWarning:    4,
+		ConsecutiveFall: 0,
+		ConsecutiveRise: 4,
+		EventPreset:     &Event{"监管层喊话风险", "市场监管部门发布风险提示，警告妖股炒作行为。但散户依然狂热。", 0.88, 2.2, MildPessimistic},
+		MarginDebt:      0,
+		IsMonsterStock:  true,
+		TargetProfit:    0.60, // 60%收益率为完美通关
+		TimeLimit:       4,    // 仅剩4个时段
+		TeachingPoints:  []string{"识别顶部信号", "克服贪婪情绪", "反身性FOMO陷阱"},
+	},
+	{
+		ID:              "endgame_2",
+		Name:            "抄底陷阱",
+		Description:     "Day 6午盘，股价已暴跌40%，超卖指标极高。是抄底良机还是接飞刀？",
+		Difficulty:      "困难",
+		StartDay:        6,
+		StartSession:    "午盘",
+		InitialPrice:    6.0,
+		PriceChange:     -0.40,
+		PlayerCash:      100000,
+		PlayerShares:    0,
+		PlayerFrozen:    0,
+		AIExitRatio:     0.50,
+		WhaleExitCount:  3,
+		CrashWarning:    3,
+		ConsecutiveFall: 3,
+		ConsecutiveRise: 0,
+		EventPreset:     &Event{"恐慌性抛售蔓延", "恐慌情绪主导市场，获利盘踩踏式出逃，成交量放大3倍。", 0.75, 2.8, ExtremePanic},
+		MarginDebt:      0,
+		IsMonsterStock:  false,
+		TargetProfit:    0.20, // 20%收益率为完美通关（抄底成功）
+		TimeLimit:       8,    // 剩余8个时段
+		TeachingPoints:  []string{"区分反弹与反转", "成交量枯竭信号", "贝叶斯反转概率"},
+	},
+	{
+		ID:              "endgame_3",
+		Name:            "杠杆生死线",
+		Description:     "Day 5午盘，你已使用3倍配资满仓，价格波动-15%。距离爆仓线仅5%，反身性恐慌已开始。",
+		Difficulty:      "地狱",
+		StartDay:        5,
+		StartSession:    "午盘",
+		InitialPrice:    8.5,
+		PriceChange:     -0.15,
+		PlayerCash:      0,
+		PlayerShares:    35294, // 约30万市值
+		PlayerFrozen:    0,
+		AIExitRatio:     0.40,
+		WhaleExitCount:  2,
+		CrashWarning:    3,
+		ConsecutiveFall: 2,
+		ConsecutiveRise: 0,
+		EventPreset:     &Event{"利空消息突发", "行业监管政策收紧，机构纷纷下调评级。", 0.82, 2.5, ExtremePanic},
+		MarginDebt:      200000, // 20万配资欠款，爆仓线约8.1元
+		IsMonsterStock:  false,
+		TargetProfit:    0.0, // 只要不爆仓就算成功
+		TimeLimit:       10,
+		TeachingPoints:  []string{"杠杆风险管理", "止损纪律", "恐慌中的理性决策"},
+	},
+	{
+		ID:              "endgame_4",
+		Name:            "FOMO狂热",
+		Description:     "Day 4尾盘，连续3天涨停，妖股氛围浓厚。散户疯狂追涨，但龙虎榜显示大资金正悄然出货。",
+		Difficulty:      "中等",
+		StartDay:        4,
+		StartSession:    "尾盘",
+		InitialPrice:    13.5,
+		PriceChange:     0.35,
+		PlayerCash:      50000,
+		PlayerShares:    3704, // 约5万市值
+		PlayerFrozen:    0,
+		AIExitRatio:     0.30,
+		WhaleExitCount:  2,
+		CrashWarning:    2,
+		ConsecutiveFall: 0,
+		ConsecutiveRise: 3,
+		EventPreset:     &Event{"散户追涨狂潮", "股吧、论坛一片看多声浪，散户跑步进场。但知名游资席位在悄然减仓。", 1.35, 0.85, ExtremeOptimistic},
+		MarginDebt:      0,
+		IsMonsterStock:  true,
+		TargetProfit:    0.40, // 40%收益率（需在顶部前离场）
+		TimeLimit:       12,
+		TeachingPoints:  []string{"识破羊群效应", "区分散户与主力行为", "反身性FOMO信号"},
+	},
+	{
+		ID:              "endgame_5",
+		Name:            "最后48小时",
+		Description:     "Day 14早盘，游戏即将结束（仅剩4个时段）。你满仓持股，价格稳定，但时间紧迫。",
+		Difficulty:      "简单",
+		StartDay:        14,
+		StartSession:    "早盘",
+		InitialPrice:    12.5,
+		PriceChange:     0.25,
+		PlayerCash:      10000,
+		PlayerShares:    7200, // 约9万市值
+		PlayerFrozen:    0,
+		AIExitRatio:     0.25,
+		WhaleExitCount:  1,
+		CrashWarning:    1,
+		ConsecutiveFall: 0,
+		ConsecutiveRise: 1,
+		EventPreset:     &Event{"市场情绪中性", "市场进入观望状态，多空博弈胶着。", 1.0, 1.0, Neutral},
+		MarginDebt:      0,
+		IsMonsterStock:  false,
+		TargetProfit:    0.25, // 25%收益率
+		TimeLimit:       4,
+		TeachingPoints:  []string{"时间压力下的决策", "见好就收", "最优离场时机"},
+	},
+	{
+		ID:              "endgame_6",
+		Name:            "反身性连环踩踏",
+		Description:     "Day 7早盘，恐慌踩踏已开始，价格每时段-10%，卖盘涌出。反身性下跌螺旋正在形成。",
+		Difficulty:      "困难",
+		StartDay:        7,
+		StartSession:    "早盘",
+		InitialPrice:    7.2,
+		PriceChange:     -0.28,
+		PlayerCash:      30000,
+		PlayerShares:    9722, // 约7万市值
+		PlayerFrozen:    0,
+		AIExitRatio:     0.60,
+		WhaleExitCount:  4,
+		CrashWarning:    4,
+		ConsecutiveFall: 3,
+		ConsecutiveRise: 0,
+		EventPreset:     &Event{"恐慌性踩踏", "恐慌情绪主导市场，卖盘如潮水涌出，反身性螺旋加速。", 0.70, 3.0, ExtremePanic},
+		MarginDebt:      0,
+		IsMonsterStock:  false,
+		TargetProfit:    -0.10, // 仅亏损10%以内即为成功（保存实力）
+		TimeLimit:       8,
+		TeachingPoints:  []string{"识别反身性螺旋", "在崩溃中止损", "对抗恐慌情绪"},
+	},
+	{
+		ID:              "endgame_7",
+		Name:            "高开低走陷阱",
+		Description:     "Day 3早盘，开盘暴涨12%诱多，但大资金正在出货。识破诱多陷阱，避免高位接盘。",
+		Difficulty:      "中等",
+		StartDay:        3,
+		StartSession:    "早盘",
+		InitialPrice:    11.2,
+		PriceChange:     0.12,
+		PlayerCash:      100000,
+		PlayerShares:    0,
+		PlayerFrozen:    0,
+		AIExitRatio:     0.15,
+		WhaleExitCount:  1,
+		CrashWarning:    1,
+		ConsecutiveFall: 0,
+		ConsecutiveRise: 2,
+		EventPreset:     &Event{"市场传闻利好", "市场传闻公司将有重大利好消息，但龙虎榜显示游资正在出货。", 1.25, 1.1, MildOptimistic},
+		MarginDebt:      0,
+		IsMonsterStock:  false,
+		TargetProfit:    0.15, // 识破陷阱，避免损失
+		TimeLimit:       6,
+		TeachingPoints:  []string{"识破高开诱多", "量价背离分析", "龙虎榜解读"},
+	},
+	{
+		ID:              "endgame_8",
+		Name:            "尾盘跳水惊魂",
+		Description:     "Day 9尾盘，前期稳定运行，突然有传闻引发尾盘跳水-8%。是恐慌性错杀还是真利空？",
+		Difficulty:      "困难",
+		StartDay:        9,
+		StartSession:    "尾盘",
+		InitialPrice:    9.2,
+		PriceChange:     -0.08,
+		PlayerCash:      15000,
+		PlayerShares:    8696, // 约8万市值
+		PlayerFrozen:    0,
+		AIExitRatio:     0.35,
+		WhaleExitCount:  2,
+		CrashWarning:    2,
+		ConsecutiveFall: 1,
+		ConsecutiveRise: 0,
+		EventPreset:     &Event{"尾盘突发利空传闻", "尾盘突然传出行业监管传闻，引发恐慌性抛售，真实性待确认。", 0.85, 2.2, MildPessimistic},
+		MarginDebt:      0,
+		IsMonsterStock:  false,
+		TargetProfit:    0.10,
+		TimeLimit:       5,
+		TeachingPoints:  []string{"尾盘异动识别", "传闻真伪判断", "恐慌性错杀机会"},
+	},
+	{
+		ID:              "endgame_9",
+		Name:            "地天板反转",
+		Description:     "Day 5午盘，早盘跌停-10%，但午盘突然放量拉升至-2%。是抄底良机还是诱多反弹？",
+		Difficulty:      "地狱",
+		StartDay:        5,
+		StartSession:    "午盘",
+		InitialPrice:    9.8,
+		PriceChange:     -0.02,
+		PlayerCash:      80000,
+		PlayerShares:    0,
+		PlayerFrozen:    0,
+		AIExitRatio:     0.55,
+		WhaleExitCount:  3,
+		CrashWarning:    3,
+		ConsecutiveFall: 2,
+		ConsecutiveRise: 0,
+		EventPreset:     &Event{"跌停板打开", "早盘跌停，但突然有神秘资金强势拉升，跌停板被打开。", 0.92, 2.0, MildPessimistic},
+		MarginDebt:      0,
+		IsMonsterStock:  false,
+		TargetProfit:    0.30, // 成功把握反转
+		TimeLimit:       6,
+		TeachingPoints:  []string{"地天板形态识别", "成交量变化", "短线博弈技巧"},
+	},
+	{
+		ID:              "endgame_10",
+		Name:            "温水煮青蛙",
+		Description:     "Day 10早盘，价格缓慢阴跌，每天-2%看似温和，但已累计跌20%。何时止损？",
+		Difficulty:      "简单",
+		StartDay:        10,
+		StartSession:    "早盘",
+		InitialPrice:    8.0,
+		PriceChange:     -0.20,
+		PlayerCash:      10000,
+		PlayerShares:    11250, // 约9万市值
+		PlayerFrozen:    0,
+		AIExitRatio:     0.50,
+		WhaleExitCount:  3,
+		CrashWarning:    2,
+		ConsecutiveFall: 5,
+		ConsecutiveRise: 0,
+		EventPreset:     &Event{"市场情绪低迷", "市场进入缓慢下行通道，成交量萎缩，多头无力反击。", 0.88, 1.6, MildPessimistic},
+		MarginDebt:      0,
+		IsMonsterStock:  false,
+		TargetProfit:    -0.05, // 及时止损，控制损失
+		TimeLimit:       5,
+		TeachingPoints:  []string{"缓慢下跌止损", "趋势判断", "避免深套"},
+	},
+	{
+		ID:              "endgame_11",
+		Name:            "放量滞涨出货",
+		Description:     "Day 6尾盘，成交量暴增3倍，但价格仅涨2%。典型的主力出货特征。",
+		Difficulty:      "中等",
+		StartDay:        6,
+		StartSession:    "尾盘",
+		InitialPrice:    14.3,
+		PriceChange:     0.43,
+		PlayerCash:      25000,
+		PlayerShares:    5245, // 约7.5万市值
+		PlayerFrozen:    0,
+		AIExitRatio:     0.40,
+		WhaleExitCount:  3,
+		CrashWarning:    2,
+		ConsecutiveFall: 0,
+		ConsecutiveRise: 3,
+		EventPreset:     &Event{"成交量异常放大", "成交量突然放大，但价格涨幅有限，龙虎榜显示知名游资减仓。", 1.12, 1.3, MildOptimistic},
+		MarginDebt:      0,
+		IsMonsterStock:  true,
+		TargetProfit:    0.35,
+		TimeLimit:       7,
+		TeachingPoints:  []string{"量价背离", "主力出货识别", "高位减仓"},
+	},
+	{
+		ID:              "endgame_12",
+		Name:            "假突破诱多",
+		Description:     "Day 7早盘，突破前高18元创新高，散户疯狂追涨。但这是真突破还是假突破？",
+		Difficulty:      "困难",
+		StartDay:        7,
+		StartSession:    "早盘",
+		InitialPrice:    18.5,
+		PriceChange:     0.85,
+		PlayerCash:      30000,
+		PlayerShares:    3784, // 约7万市值
+		PlayerFrozen:    0,
+		AIExitRatio:     0.25,
+		WhaleExitCount:  2,
+		CrashWarning:    1,
+		ConsecutiveFall: 0,
+		ConsecutiveRise: 4,
+		EventPreset:     &Event{"突破前高", "股价突破前期高点，技术派欢呼雀跃，但成交量未能有效放大。", 1.40, 0.9, ExtremeOptimistic},
+		MarginDebt:      0,
+		IsMonsterStock:  true,
+		TargetProfit:    0.50,
+		TimeLimit:       6,
+		TeachingPoints:  []string{"真假突破判断", "成交量配合", "技术陷阱识别"},
+	},
+	{
+		ID:              "endgame_13",
+		Name:            "破位反抽陷阱",
+		Description:     "Day 8午盘，跌破10元支撑位后反弹至10.5元。是止跌企稳还是诱多出货？",
+		Difficulty:      "困难",
+		StartDay:        8,
+		StartSession:    "午盘",
+		InitialPrice:    10.5,
+		PriceChange:     0.05,
+		PlayerCash:      50000,
+		PlayerShares:    4762, // 约5万市值
+		PlayerFrozen:    0,
+		AIExitRatio:     0.45,
+		WhaleExitCount:  3,
+		CrashWarning:    3,
+		ConsecutiveFall: 2,
+		ConsecutiveRise: 0,
+		EventPreset:     &Event{"破位后反弹", "跌破重要支撑位后出现反弹，成交量萎缩，技术上呈现弱反弹特征。", 0.95, 1.8, Neutral},
+		MarginDebt:      0,
+		IsMonsterStock:  false,
+		TargetProfit:    0.05,
+		TimeLimit:       6,
+		TeachingPoints:  []string{"破位后反抽", "支撑位有效性", "弱反弹识别"},
+	},
+	{
+		ID:              "endgame_14",
+		Name:            "T+0日内套利",
+		Description:     "Day 11早盘，价格在12-13元区间震荡，波动率大。考验你的日内高抛低吸能力。",
+		Difficulty:      "简单",
+		StartDay:        11,
+		StartSession:    "早盘",
+		InitialPrice:    12.5,
+		PriceChange:     0.25,
+		PlayerCash:      50000,
+		PlayerShares:    4000, // 约5万市值，可T+0操作
+		PlayerFrozen:    0,
+		AIExitRatio:     0.20,
+		WhaleExitCount:  1,
+		CrashWarning:    1,
+		ConsecutiveFall: 0,
+		ConsecutiveRise: 1,
+		EventPreset:     &Event{"震荡行情", "市场进入震荡整理，日内波动加大，适合短线交易。", 1.05, 1.2, Neutral},
+		MarginDebt:      0,
+		IsMonsterStock:  false,
+		TargetProfit:    0.35, // 通过T+0套利增强收益
+		TimeLimit:       4,
+		TeachingPoints:  []string{"日内波段操作", "高抛低吸", "T+0策略"},
+	},
+	{
+		ID:              "endgame_15",
+		Name:            "题材炒作末期",
+		Description:     "Day 12尾盘，ST摘帽题材已炒作5天，累计涨幅70%。题材即将退潮，何时离场？",
+		Difficulty:      "中等",
+		StartDay:        12,
+		StartSession:    "尾盘",
+		InitialPrice:    17.0,
+		PriceChange:     0.70,
+		PlayerCash:      15000,
+		PlayerShares:    5000, // 约8.5万市值
+		PlayerFrozen:    0,
+		AIExitRatio:     0.35,
+		WhaleExitCount:  2,
+		CrashWarning:    2,
+		ConsecutiveFall: 0,
+		ConsecutiveRise: 5,
+		EventPreset:     &Event{"题材炒作降温", "ST摘帽题材持续多日，市场开始出现分歧，部分资金开始撤离。", 1.18, 1.4, MildOptimistic},
+		MarginDebt:      0,
+		IsMonsterStock:  true,
+		TargetProfit:    0.60,
+		TimeLimit:       3,
+		TeachingPoints:  []string{"题材炒作周期", "题材退潮信号", "投机时机把握"},
+	},
+	{
+		ID:              "endgame_16",
+		Name:            "机构对倒识破",
+		Description:     "Day 5午盘，盘面出现大量对倒单，成交活跃但价格波动小。识破机构对倒行为。",
+		Difficulty:      "地狱",
+		StartDay:        5,
+		StartSession:    "午盘",
+		InitialPrice:    11.8,
+		PriceChange:     0.18,
+		PlayerCash:      60000,
+		PlayerShares:    3390, // 约4万市值
+		PlayerFrozen:    0,
+		AIExitRatio:     0.30,
+		WhaleExitCount:  2,
+		CrashWarning:    2,
+		ConsecutiveFall: 0,
+		ConsecutiveRise: 2,
+		EventPreset:     &Event{"盘面异常活跃", "盘中出现大量对倒盘，成交量放大但价格窄幅震荡，疑似机构对倒吸引跟风盘。", 1.08, 1.5, Neutral},
+		MarginDebt:      0,
+		IsMonsterStock:  false,
+		TargetProfit:    0.25,
+		TimeLimit:       8,
+		TeachingPoints:  []string{"对倒盘识别", "盘口语言解读", "主力行为分析"},
+	},
+}
+
+// ===== 教学系统 =====
+
+var SeenSignals = make(map[string]bool) // 记录已看过的信号类型
+
 type GameStateSnapshot struct {
 	Day                 int
 	Session             string
@@ -524,8 +990,7 @@ func getTraderTitle(level int) string {
 		return titles[level]
 	}
 	return "无上庄家"
-	}
-
+}
 
 // 添加市场日志
 func (s *GameState) AddLog(msg string) {
@@ -533,6 +998,13 @@ func (s *GameState) AddLog(msg string) {
 	if len(s.MarketLogs) > 8 {
 		s.MarketLogs = s.MarketLogs[1:]
 	}
+}
+
+// 叙述性日志输出，让回合结算有动态滚动感
+func (s *GameState) SpeakLog(msg string) {
+	s.AddLog(msg)
+	fmt.Printf("  %s%s%s\n", Gray, msg, Reset)
+	time.Sleep(150 * time.Millisecond)
 }
 
 // 记录编年史
@@ -631,7 +1103,7 @@ func showRecordHistory(reader *bufio.Reader) {
 	if len(history.Records) == 0 {
 		fmt.Println(Yellow + "\n暂无历史战绩记录。开始第一场游戏吧！\n" + Reset)
 		fmt.Print("按回车键继续...")
-		reader.ReadString('\n')
+		waitEnter(reader)
 		return
 	}
 
@@ -672,11 +1144,12 @@ func showRecordHistory(reader *bufio.Reader) {
 		fmt.Printf("  崩盘逃顶成功率: %.0f%% (%d/%d)\n", escapedRate, crashedEscaped, totalCrashed)
 	}
 
-	// 显示最近10场战绩
-	fmt.Println("\n" + Cyan + "📜 最近战绩 (最多显示10场)" + Reset)
+	// 显示最近10场战绩（从最新到最旧）
+	fmt.Println("\n" + Cyan + "📜 最近战绩 (最多显示10场，从新到旧)" + Reset)
 	fmt.Println(Cyan + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + Reset)
 
 	displayCount := min(10, len(history.Records))
+	// 从最新的记录开始显示（索引0是最新的）
 	for i := 0; i < displayCount; i++ {
 		record := history.Records[i]
 
@@ -728,7 +1201,7 @@ func showRecordHistory(reader *bufio.Reader) {
 
 	fmt.Println("\n" + Cyan + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + Reset)
 	fmt.Print("\n按回车键返回...")
-	reader.ReadString('\n')
+	waitEnter(reader)
 }
 
 // 加载成就数据
@@ -1038,7 +1511,183 @@ func showAchievements(reader *bufio.Reader) {
 
 	fmt.Println("\n" + Cyan + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + Reset)
 	fmt.Print("\n按回车键返回...")
-	reader.ReadString('\n')
+	waitEnter(reader)
+}
+
+// 设置菜单
+func showSettingsMenu(reader *bufio.Reader) {
+	for {
+		fmt.Print("\033[H\033[2J") // 清屏
+		fmt.Println(Cyan + "╔══════════════════════════════════════════════════════╗")
+		fmt.Println("║                ⚙️  游戏设置                         ║")
+		fmt.Println("╚══════════════════════════════════════════════════════╝" + Reset)
+		fmt.Println()
+
+		// 显示当前设置
+		fmt.Println(Yellow + "【当前设置】" + Reset)
+		fmt.Printf("  [1] 高级分析显示: %s\n", boolToOnOff(GlobalSettings.ShowAdvancedAnalysis))
+		fmt.Printf("  [2] 分析详细度: %s (%s)\n", GlobalSettings.AnalysisDetail, detailLevelDesc(GlobalSettings.AnalysisDetail))
+		fmt.Printf("  [3] 教学提示: %s\n", boolToOnOff(GlobalSettings.ShowEducation))
+		fmt.Println()
+		fmt.Println(Green + "  [0] 返回主菜单" + Reset)
+		fmt.Println()
+		fmt.Print(Green + "请选择要修改的设置项 (0-3): " + Reset)
+
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+
+		switch input {
+		case "0":
+			return // 返回主菜单
+		case "1":
+			GlobalSettings.ShowAdvancedAnalysis = !GlobalSettings.ShowAdvancedAnalysis
+			if GlobalSettings.ShowAdvancedAnalysis {
+				fmt.Println(Green + "\n✅ 已开启高级分析显示" + Reset)
+			} else {
+				fmt.Println(Yellow + "\n⚠️ 已关闭高级分析显示" + Reset)
+			}
+			time.Sleep(800 * time.Millisecond)
+		case "2":
+			// 切换详细度: simple -> detailed -> expert -> simple
+			switch GlobalSettings.AnalysisDetail {
+			case "simple":
+				GlobalSettings.AnalysisDetail = "detailed"
+			case "detailed":
+				GlobalSettings.AnalysisDetail = "expert"
+			case "expert":
+				GlobalSettings.AnalysisDetail = "simple"
+			default:
+				GlobalSettings.AnalysisDetail = "detailed"
+			}
+			fmt.Printf(Green+"\n✅ 分析详细度已切换为: %s (%s)"+Reset+"\n", GlobalSettings.AnalysisDetail, detailLevelDesc(GlobalSettings.AnalysisDetail))
+			time.Sleep(800 * time.Millisecond)
+		case "3":
+			GlobalSettings.ShowEducation = !GlobalSettings.ShowEducation
+			if GlobalSettings.ShowEducation {
+				fmt.Println(Green + "\n✅ 已开启教学提示" + Reset)
+			} else {
+				fmt.Println(Yellow + "\n⚠️ 已关闭教学提示" + Reset)
+			}
+			time.Sleep(800 * time.Millisecond)
+		}
+	}
+}
+
+// 辅助函数：布尔值转开关显示
+func boolToOnOff(b bool) string {
+	if b {
+		return Green + "开启" + Reset
+	}
+	return Gray + "关闭" + Reset
+}
+
+// 辅助函数：详细度描述
+func detailLevelDesc(level string) string {
+	switch level {
+	case "simple":
+		return "简洁版"
+	case "detailed":
+		return "详细版"
+	case "expert":
+		return "专家版 (最详细)"
+	default:
+		return "未知"
+	}
+}
+
+// 辅助函数：等待回车（更健壮地处理 \r, \n, \r\n）
+func waitEnter(reader *bufio.Reader) {
+	for {
+		_, err := reader.ReadByte()
+		if err != nil {
+			return
+		}
+		return
+	}
+}
+
+// 残局场景选择
+func selectEndgameScenario(reader *bufio.Reader) *EndgameScenario {
+	fmt.Print("\033[H\033[2J") // 清屏
+	fmt.Println(Purple + "╔══════════════════════════════════════════════════════╗")
+	fmt.Println("║              🎯 残局挑战选择                        ║")
+	fmt.Println("╚══════════════════════════════════════════════════════╝" + Reset)
+	fmt.Println()
+	fmt.Println(Cyan + "残局模式：从关键市场情境开始，专注训练特定决策能力" + Reset)
+	fmt.Println()
+
+	// 动态创建菜单项
+	items := make([]MenuItem, len(EndgameScenarios)+1)
+
+	for i, scenario := range EndgameScenarios {
+		diffIcon := "🟢"
+		if scenario.Difficulty == "中等" {
+			diffIcon = "🟡"
+		} else if scenario.Difficulty == "困难" {
+			diffIcon = "🔴"
+		} else if scenario.Difficulty == "地狱" {
+			diffIcon = "💀"
+		}
+
+		items[i] = MenuItem{
+			Label: scenario.Name,
+			Description: fmt.Sprintf("%s %s | 目标: +%.0f%% | %d时段 | %s",
+				diffIcon, scenario.Difficulty,
+				scenario.TargetProfit*100,
+				scenario.TimeLimit,
+				strings.Join(scenario.TeachingPoints, ", ")),
+			Value: fmt.Sprintf("%d", i+1),
+		}
+	}
+
+	// 添加返回选项
+	items[len(EndgameScenarios)] = MenuItem{
+		Label:       "返回主菜单",
+		Description: "",
+		Value:       "0",
+	}
+
+	menu := NewInteractiveMenu("请选择残局场景：", items)
+	menu.Reader = reader
+	value, _ := menu.Show()
+
+	choice := 0
+	fmt.Sscanf(value, "%d", &choice)
+
+	if choice == 0 || value == "" {
+		return nil // 返回主菜单
+	}
+
+	if choice < 1 || choice > len(EndgameScenarios) {
+		return nil
+	}
+
+	selected := &EndgameScenarios[choice-1]
+
+	// 显示场景详情
+	fmt.Print("\033[H\033[2J")
+	fmt.Println(Purple + "╔══════════════════════════════════════════════════════╗")
+	fmt.Printf("║          残局挑战: %s%-30s║\n", Yellow, selected.Name+Reset)
+	fmt.Println("╚══════════════════════════════════════════════════════╝" + Reset)
+	fmt.Println()
+	fmt.Printf(Cyan+"【场景描述】"+Reset+"\n%s\n\n", selected.Description)
+	fmt.Printf(Yellow + "【起始条件】" + Reset + "\n")
+	fmt.Printf("  Day %d %s | 当前股价: $%.2f (累计%+.0f%%)\n",
+		selected.StartDay, selected.StartSession, selected.InitialPrice, selected.PriceChange*100)
+	fmt.Printf("  玩家持仓: %d股 + $%.0f现金\n", selected.PlayerShares, selected.PlayerCash)
+	if selected.MarginDebt > 0 {
+		fmt.Printf("  %s配资欠款: $%.0f%s (爆仓风险！)\n", Red, selected.MarginDebt, Reset)
+	}
+	fmt.Printf("  AI逃跑率: %.0f%% | 大资金出逃: %d个\n", selected.AIExitRatio*100, selected.WhaleExitCount)
+	fmt.Printf("  崩盘预警等级: %s%d/5%s\n", Red, selected.CrashWarning, Reset)
+	fmt.Println()
+	fmt.Printf(Green+"【通关目标】"+Reset+" 收益率达到 %s%+.0f%%%s\n", Yellow, selected.TargetProfit*100, Reset)
+	fmt.Printf(Cyan+"【教学重点】"+Reset+" %s\n\n", strings.Join(selected.TeachingPoints, ", "))
+
+	fmt.Print(Green + "按回车键开始挑战..." + Reset)
+	waitEnter(reader)
+
+	return selected
 }
 
 func selectGameMode(reader *bufio.Reader) (string, int, *AutoStrategy) {
@@ -1046,27 +1695,35 @@ func selectGameMode(reader *bufio.Reader) (string, int, *AutoStrategy) {
 	fmt.Println(Purple + "╔══════════════════════════════════════════════════════╗")
 	fmt.Println("║       妖股搏杀 - 游戏模式选择                       ║")
 	fmt.Println("╚══════════════════════════════════════════════════════╝" + Reset)
-
-	fmt.Println("\n" + Cyan + "请选择游戏模式：" + Reset)
-	fmt.Println()
-	fmt.Println(Yellow + "[1] 手动模式 - 自动结束" + Reset)
-	fmt.Println("    经典模式，最多15天（30回合），崩盘自动结束")
-	fmt.Println()
-	fmt.Println(Yellow + "[2] 手动模式 - 60回合固定" + Reset)
-	fmt.Println("    固定60回合，不会中途崩盘，适合长期博弈")
-	fmt.Println()
-	fmt.Println(Yellow + "[3] 自动策略模拟 - 0-1博弈测试" + Reset)
-	fmt.Println("    AI自动执行止盈止损策略，测试策略效果")
 	fmt.Println()
 
-	fmt.Print(Green + "请输入编号 (1-3): " + Reset)
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
+	items := []MenuItem{
+		{
+			Label:       "手动模式",
+			Description: "最多15天，崩盘结束",
+			Value:       "1",
+			Icon:        "🎮",
+		},
+		{
+			Label:       "手动60回合",
+			Description: "固定60回合，无崩盘",
+			Value:       "2",
+			Icon:        "🎯",
+		},
+		{
+			Label:       "AI策略测试",
+			Description: "自动止盈止损",
+			Value:       "3",
+			Icon:        "🤖",
+		},
+	}
+
+	menu := NewInteractiveMenu("游戏模式", items)
+	menu.Reader = reader
+	value, _ := menu.Show()
 
 	choice := 1
-	if len(input) > 0 {
-		fmt.Sscanf(input, "%d", &choice)
-	}
+	fmt.Sscanf(value, "%d", &choice)
 
 	switch choice {
 	case 2:
@@ -1087,23 +1744,7 @@ func selectAutoStrategy(reader *bufio.Reader) *AutoStrategy {
 	fmt.Println(Purple + "╔══════════════════════════════════════════════════════╗")
 	fmt.Println("║       自动策略选择 - 0-1博弈测试                    ║")
 	fmt.Println("╚══════════════════════════════════════════════════════╝" + Reset)
-
-	fmt.Println("\n" + Cyan + "预设策略：" + Reset)
 	fmt.Println()
-	fmt.Println(Yellow + "[1] 激进策略" + Reset + " - 止盈+15%, 止损-5%, 不回买")
-	fmt.Println(Yellow + "[2] 稳健策略" + Reset + " - 止盈+25%, 止损-8%, 不回买")
-	fmt.Println(Yellow + "[3] 波段策略" + Reset + " - 止盈+20%, 止损-10%, 跌15%回买")
-	fmt.Println(Yellow + "[4] 格局策略" + Reset + " - 止盈+40%, 止损-15%, 跌20%回买")
-	fmt.Println()
-
-	fmt.Print(Green + "请输入编号 (1-4): " + Reset)
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
-
-	choice := 1
-	if len(input) > 0 {
-		fmt.Sscanf(input, "%d", &choice)
-	}
 
 	strategies := []AutoStrategy{
 		{"激进策略", 0.15, -0.05, 0.85, false},
@@ -1111,6 +1752,36 @@ func selectAutoStrategy(reader *bufio.Reader) *AutoStrategy {
 		{"波段策略", 0.20, -0.10, 0.85, true},
 		{"格局策略", 0.40, -0.15, 0.80, true},
 	}
+
+	items := []MenuItem{
+		{
+			Label:       "激进策略",
+			Description: "止盈+15%, 止损-5%, 不回买",
+			Value:       "1",
+		},
+		{
+			Label:       "稳健策略",
+			Description: "止盈+25%, 止损-8%, 不回买",
+			Value:       "2",
+		},
+		{
+			Label:       "波段策略",
+			Description: "止盈+20%, 止损-10%, 跌15%回买",
+			Value:       "3",
+		},
+		{
+			Label:       "格局策略",
+			Description: "止盈+40%, 止损-15%, 跌20%回买",
+			Value:       "4",
+		},
+	}
+
+	menu := NewInteractiveMenu("预设策略：", items)
+	menu.Reader = reader
+	value, _ := menu.Show()
+
+	choice := 1
+	fmt.Sscanf(value, "%d", &choice)
 
 	if choice < 1 || choice > 4 {
 		choice = 1
@@ -1125,7 +1796,7 @@ func selectAutoStrategy(reader *bufio.Reader) *AutoStrategy {
 		fmt.Printf("  不回买\n")
 	}
 	fmt.Print("\n按回车键确认...")
-	reader.ReadString('\n')
+	waitEnter(reader)
 
 	return &strategy
 }
@@ -1135,24 +1806,24 @@ func selectTheme(reader *bufio.Reader) *ThemeMode {
 	fmt.Println(Purple + "╔══════════════════════════════════════════════════════╗")
 	fmt.Println("║       妖股搏杀 - 主题模式选择                       ║")
 	fmt.Println("╚══════════════════════════════════════════════════════╝" + Reset)
-
-	fmt.Println("\n" + Cyan + "请选择你想体验的主题模式：" + Reset)
 	fmt.Println()
 
+	// 动态创建菜单项
+	items := make([]MenuItem, len(AllThemes))
 	for i, theme := range AllThemes {
-		fmt.Printf("%s[%d] %s%s\n", Yellow, i+1, theme.Name, Reset)
-		fmt.Printf("    %s\n", theme.Description)
-		fmt.Printf("    难度: %s\n\n", theme.Difficulty)
+		items[i] = MenuItem{
+			Label:       theme.Name,
+			Description: fmt.Sprintf("%s | 难度: %s", theme.Description, theme.Difficulty),
+			Value:       fmt.Sprintf("%d", i+1),
+		}
 	}
 
-	fmt.Print(Green + "请输入编号 (1-" + fmt.Sprintf("%d", len(AllThemes)) + "): " + Reset)
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
+	menu := NewInteractiveMenu("请选择你想体验的主题模式：", items)
+	menu.Reader = reader
+	value, _ := menu.Show()
 
 	choice := 1 // 默认经典模式
-	if len(input) > 0 {
-		fmt.Sscanf(input, "%d", &choice)
-	}
+	fmt.Sscanf(value, "%d", &choice)
 
 	if choice < 1 || choice > len(AllThemes) {
 		choice = 1
@@ -1160,10 +1831,10 @@ func selectTheme(reader *bufio.Reader) *ThemeMode {
 
 	selectedTheme := &AllThemes[choice-1]
 
-	fmt.Printf("\n"+Cyan+"你选择了: %s%s%s\n"+Reset, Yellow, selectedTheme.Name, Cyan)
-	fmt.Printf("%s\n", selectedTheme.Description)
-	fmt.Print("\n按回车键确认开始...")
-	reader.ReadString('\n')
+	fmt.Printf("\r\n"+Cyan+"你选择了: %s%s%s\n"+Reset, Yellow, selectedTheme.Name, Cyan)
+	fmt.Printf("%s\r\n", selectedTheme.Description)
+	fmt.Print("\r\n按回车键确认开始...")
+	waitEnter(reader)
 
 	return selectedTheme
 }
@@ -1187,6 +1858,7 @@ func renderSplash() {
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
+	fmt.Print("\033[H\033[2J\033[3J") // 程序刚启动时大清屏
 	reader := bufio.NewReader(os.Stdin)
 
 	// 选择游戏模式
@@ -1197,29 +1869,63 @@ func main() {
 	Events = CurrentTheme.Events
 
 	// 询问是否查看历史战绩或成就
+	var selectedEndgame *EndgameScenario
 	for {
+		// 每次返回主菜单时大清屏，确保干净
+		fmt.Print("\033[H\033[2J\033[3J")
 		renderSplash()
-		fmt.Println(Cyan + "      欢迎来到妖股搏杀！请选择操作：" + Reset)
-		fmt.Println()
-		fmt.Println(Yellow + "      [1] 查看历史战绩" + Reset)
-		fmt.Println(Yellow + "      [2] 查看成就墙 (荣誉殿堂)" + Reset)
-		fmt.Println(Yellow + "      [3] 直接开始游戏" + Reset)
-		fmt.Println()
-		fmt.Print(Green + "      请输入编号 (1-3): " + Reset)
 
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
+		// 使用交互式菜单
+		items := []MenuItem{
+			{Label: "查看历史战绩", Value: "1"},
+			{Label: "查看成就墙 (荣誉殿堂)", Value: "2"},
+			{Label: "设置", Value: "3", Icon: "⚙️"},
+			{Label: "残局挑战", Value: "4", Icon: "🎯"},
+			{Label: "AI求解器 (动态规划寻优)", Value: "5", Icon: "🤖"},
+			{Label: "直接开始游戏", Value: "6", Icon: "🎮"},
+		}
 
-		if input == "1" {
+		menu := NewInteractiveMenu("欢迎来到妖股搏杀！请选择操作：", items)
+		menu.Reader = reader
+		value, _ := menu.Show()
+
+		if value == "" {
+			// ESC退出
+			break
+		}
+
+		switch value {
+		case "1":
 			showRecordHistory(reader)
-		} else if input == "2" {
+		case "2":
 			showAchievements(reader)
-		} else {
-			break // 开始游戏
+		case "3":
+			showSettingsMenu(reader)
+		case "4":
+			selectedEndgame = selectEndgameScenario(reader)
+			if selectedEndgame != nil {
+				break // 进入残局模式
+			}
+		case "5":
+			RunSolverCLI() // 运行AI求解器
+		default:
+			break // 开始普通游戏
+		}
+
+		if value == "4" && selectedEndgame != nil {
+			break
+		}
+		if value == "6" {
+			break
 		}
 	}
 
-	state := initGame(gameMode, maxDays, autoStrategy)
+	var state *GameState
+	if selectedEndgame != nil {
+		state = initEndgameState(selectedEndgame)
+	} else {
+		state = initGame(gameMode, maxDays, autoStrategy)
+	}
 
 	// 初始化历史状态缓存
 	histCache := &HistoricalStateCache{
@@ -1236,7 +1942,7 @@ func main() {
 	fmt.Println("  2. 注意观察游资(Whale)的动作，他们可能是你的轿夫，也可能是屠夫。")
 	fmt.Println("  3. 勋章墙记录你的长期成长，编年史记录你的每一次贪婪。")
 	fmt.Print("\n  按回车键，踏入修罗场...")
-	reader.ReadString('\n')
+	waitEnter(reader)
 
 	// 翻牌动画标记：第一天早盘不做动画，之后每次新的早盘做
 
@@ -1275,36 +1981,89 @@ func main() {
 			executeAutoStrategy(state)
 			time.Sleep(500 * time.Millisecond) // 暂停让玩家看到
 		} else {
-			// 手动模式 - 显示综合操作面板
-			fmt.Printf("\n" + Yellow + "【交易指令台】" + Reset + "\n")
-			fmt.Printf(" [1] 观望 (Hold)    ")
+			// 手动模式 - 使用交互式菜单
+			var menuItems []MenuItem
+			data := loadAchievementData()
+
+			// 选项1: 观望
+			menuItems = append(menuItems, MenuItem{
+				Label: "观望",
+				Value: "1",
+			})
+
+			// 卖出选项 (2-4)
 			if state.PlayerAvailableShares > 0 {
-				fmt.Printf("[2] 减仓1/3    [3] 卖出一半    [4] 核按钮清仓    ")
-			} else if state.PlayerFrozenShares > 0 {
-				fmt.Printf(Red + "[无法卖出] 筹码已被T+1冻结！" + Reset + "    ")
+				sellThird := state.PlayerAvailableShares / 3
+				sellHalf := state.PlayerAvailableShares / 2
+				menuItems = append(menuItems, MenuItem{
+					Label:       "减仓1/3",
+					Description: fmt.Sprintf("%d股", sellThird),
+					Value:       "2",
+				})
+				menuItems = append(menuItems, MenuItem{
+					Label:       "卖出一半",
+					Description: fmt.Sprintf("%d股", sellHalf),
+					Value:       "3",
+				})
+				menuItems = append(menuItems, MenuItem{
+					Label:       "清仓",
+					Description: fmt.Sprintf("%d股", state.PlayerAvailableShares),
+					Value:       "4",
+					Icon:        "💣",
+				})
 			}
 
+			// 买入选项 (5-7)
 			canBuyShares := int(state.PlayerCash / state.Price)
 			if canBuyShares > 0 {
-				fmt.Printf("\n [5] 建仓1/3    [6] 半仓买入    [7] 满仓梭哈    ")
+				buyThird := canBuyShares / 3
+				buyHalf := canBuyShares / 2
+				menuItems = append(menuItems, MenuItem{
+					Label:       "建仓1/3",
+					Description: fmt.Sprintf("~%d股", buyThird),
+					Value:       "5",
+				})
+				menuItems = append(menuItems, MenuItem{
+					Label:       "半仓买入",
+					Description: fmt.Sprintf("~%d股", buyHalf),
+					Value:       "6",
+				})
+				menuItems = append(menuItems, MenuItem{
+					Label:       "满仓",
+					Description: fmt.Sprintf("~%d股", canBuyShares),
+					Value:       "7",
+					Icon:        "🚀",
+				})
 			}
-			if state.MarginDebt == 0 && (state.PlayerCash > 0 || state.PlayerShares > 0) {
-				fmt.Printf(Purple + "[8] 🎲配资3倍杠杆满仓！" + Reset)
-			}
-			data := loadAchievementData()
-			if data.IntelPoints > 0 && !state.IntelUsedThisTurn {
-				fmt.Printf(Cyan + "\n [9] 🕵️ 购买内幕情报 (消耗1点情报, 剩余%d点)" + Reset, data.IntelPoints)
-			}
-			fmt.Printf("\n" + Green + "请输入指令号: " + Reset)
 
-			var input string
-			for {
-				raw, _ := reader.ReadString('\n')
-				input = strings.TrimSpace(raw)
-				if input != "" {
-					break
-				}
-				fmt.Print(Yellow + "  ⚠️  未输入，请输入编号后回车: " + Reset)
+			// 配资选项 (8)
+			if state.MarginDebt == 0 && (state.PlayerCash > 0 || state.PlayerShares > 0) {
+				menuItems = append(menuItems, MenuItem{
+					Label:       "3倍杠杆",
+					Description: "配资满仓",
+					Value:       "8",
+					Icon:        "🎲",
+				})
+			}
+
+			// 情报选项 (9)
+			if data.IntelPoints > 0 && !state.IntelUsedThisTurn {
+				menuItems = append(menuItems, MenuItem{
+					Label:       "内幕情报",
+					Description: fmt.Sprintf("剩余%d点", data.IntelPoints),
+					Value:       "9",
+					Icon:        "🕵️",
+				})
+			}
+
+			// 显示菜单并获取选择
+			menu := NewInteractiveMenu("【交易指令台】", menuItems)
+			menu.Reader = reader
+			input, _ := menu.Show()
+
+			// 如果用户取消（ESC），默认为观望
+			if input == "" {
+				input = "1"
 			}
 
 			if input == "9" && data.IntelPoints > 0 && !state.IntelUsedThisTurn {
@@ -1314,7 +2073,7 @@ func main() {
 				state.LastActionMessage = fmt.Sprintf("🕵️ 【绝密内幕】 明天预测事件: %s (%s)", state.NextEvent.Title, state.NextEvent.Desc)
 				state.AddLog(fmt.Sprintf("%s 🕵️ 你动用关系获取了明天情报: %s%s", Cyan, state.NextEvent.Title, Reset))
 				renderFrame(state, histCache) // 刷新一次以显示日志
-				continue           // 继续本回合操作
+				continue                      // 继续本回合操作
 			}
 
 			switch input {
@@ -1390,15 +2149,188 @@ func main() {
 
 		processTurn(state)
 
-			// 捕获当前状态快照
-			snapshot := captureGameStateSnapshot(state)
-			histCache.States = append(histCache.States, snapshot)
-			if len(histCache.States) > 20 {
+		// 捕获当前状态快照
+		snapshot := captureGameStateSnapshot(state)
+		histCache.States = append(histCache.States, snapshot)
+		if len(histCache.States) > 20 {
 			histCache.States = histCache.States[1:] // 保留最近20个
-			}
+		}
 	}
 
-	renderGameOver(state)
+	renderGameOver(state, reader)
+
+	// 生成复盘报告
+	generatePostGameReport(state, histCache)
+}
+
+// 辅助函数：计算总回合数（用于残局进度追踪）
+func calculateTurnNumberHelper(day int, session string) int {
+	// 每天4个session（集合竞价、早盘、午盘、尾盘）
+	baseTurns := (day - 1) * 4
+	sessionTurn := sessionToInt(session)
+	return baseTurns + sessionTurn
+}
+
+// 初始化残局模式游戏状态
+func initEndgameState(scenario *EndgameScenario) *GameState {
+	// 基础状态
+	state := &GameState{
+		Day:                   scenario.StartDay,
+		Session:               scenario.StartSession,
+		MaxDays:               15, // 固定15天
+		GameMode:              "手动",
+		Price:                 scenario.InitialPrice,
+		LastPrice:             scenario.InitialPrice * 0.98, // 模拟前一价格
+		PlayerShares:          scenario.PlayerShares,
+		PlayerAvailableShares: scenario.PlayerShares,
+		PlayerFrozenShares:    scenario.PlayerFrozen,
+		PlayerCash:            scenario.PlayerCash,
+		PlayerAvgCost:         10.0, // 假设初始成本为开盘价
+		MarginDebt:            scenario.MarginDebt,
+		IsGameOver:            false,
+		IsCrashed:             false,
+		IsMarginCalled:        false,
+		CurrentEvent:          *scenario.EventPreset,
+		NextEvent:             Events[rand.Intn(len(Events))],
+		BuyPressure:           0,
+		SellPressure:          0,
+		RetailBuying:          0,
+		RetailSelling:         0,
+		CrashWarningLevel:     scenario.CrashWarning,
+		ConsecutiveFallDays:   scenario.ConsecutiveFall,
+		ConsecutiveGrowthDays: scenario.ConsecutiveRise,
+		IsMonsterStock:        scenario.IsMonsterStock,
+		IntelUsedThisTurn:     false,
+		AutoTradeStrategy:     nil,
+		MarketLogs:            []string{},
+		Chronicle:             []ChronicleEntry{},
+		PlayerSoldDay:         0,
+		PlayerSoldSession:     "",
+		PlayerOrderType:       "",
+		PlayerOrderShares:     0,
+		PlayerOrderCash:       0,
+		LastActionMessage:     fmt.Sprintf("🎯 残局挑战：%s", scenario.Name),
+		IsEndgameMode:         true,
+		EndgameScenario:       scenario,
+		EndgameStartTurn:      calculateTurnNumberHelper(scenario.StartDay, scenario.StartSession),
+	}
+
+	// 初始化AI交易员（根据场景调整）
+	totalAICount := 20
+	whaleCount := 7
+	quantCount := 6
+	retailCount := 7
+
+	state.AIs = []*AI{}
+
+	// 创建AI并标记部分已出逃
+	aiEscapedCount := int(float64(totalAICount) * scenario.AIExitRatio)
+	whaleEscapedCount := scenario.WhaleExitCount
+
+	// Whales
+	for i := 0; i < whaleCount; i++ {
+		ai := &AI{
+			ID:           fmt.Sprintf("Whale-%d", i+1),
+			Type:         "Whale",
+			SubType:      []string{"刺客", "打板", "埋伏"}[rand.Intn(3)],
+			Shares:       10000 + rand.Intn(5000),
+			Cost:         10.0,
+			Cash:         0,
+			HasSold:      i < whaleEscapedCount, // 前N个已出逃
+			TargetProfit: 0.30 + float64(rand.Intn(20))*0.01,
+			FearBasis:    2.0 + float64(rand.Intn(10))*0.1,
+		}
+		if ai.HasSold {
+			ai.Cash = float64(ai.Shares) * scenario.InitialPrice * 0.9 // 假设以稍低价格卖出
+			ai.Shares = 0
+		}
+		state.AIs = append(state.AIs, ai)
+	}
+
+	// Quants
+	remainingEscaped := aiEscapedCount - whaleEscapedCount
+	for i := 0; i < quantCount; i++ {
+		ai := &AI{
+			ID:           fmt.Sprintf("Quant-%d", i+1),
+			Type:         "Quant",
+			SubType:      []string{"网格", "趋势", "对冲"}[rand.Intn(3)],
+			Shares:       5000 + rand.Intn(3000),
+			Cost:         10.0,
+			Cash:         0,
+			HasSold:      i < remainingEscaped,
+			TargetProfit: 0.05 + float64(rand.Intn(10))*0.01,
+			FearBasis:    1.8,
+		}
+		if ai.HasSold {
+			ai.Cash = float64(ai.Shares) * scenario.InitialPrice * 0.92
+			ai.Shares = 0
+			remainingEscaped--
+		}
+		state.AIs = append(state.AIs, ai)
+	}
+
+	// Retail
+	for i := 0; i < retailCount; i++ {
+		ai := &AI{
+			ID:           fmt.Sprintf("Retail-%d", i+1),
+			Type:         "Retail",
+			SubType:      []string{"新韭", "老韭", "佛系"}[rand.Intn(3)],
+			Shares:       1000 + rand.Intn(2000),
+			Cost:         10.0,
+			Cash:         0,
+			HasSold:      remainingEscaped > 0 && i < remainingEscaped,
+			TargetProfit: 0.50,
+			FearBasis:    2.5,
+		}
+		if ai.HasSold {
+			ai.Cash = float64(ai.Shares) * scenario.InitialPrice * 0.88
+			ai.Shares = 0
+			remainingEscaped--
+		}
+		state.AIs = append(state.AIs, ai)
+	}
+
+	// 添加国家队（不会逃跑）
+	state.AIs = append(state.AIs, &AI{
+		ID:           "Institution-1",
+		Type:         "Institution",
+		SubType:      "国家队",
+		Shares:       20000,
+		Cost:         10.0,
+		Cash:         100000,
+		HasSold:      false,
+		TargetProfit: 0.10,
+		FearBasis:    5.0,
+	})
+
+	// 初始化缺失的关键字段
+	state.TotalMarketShares = 100000 // 全服流通盘
+	state.InitialAsset = float64(state.PlayerShares)*state.Price + state.PlayerCash - state.MarginDebt
+
+	// 初始化历史数据（模拟之前的数据）
+	state.PriceHistory = []float64{scenario.InitialPrice}
+	state.VolumeHistory = []int{5000} // 初始成交量
+	state.DayLow = scenario.InitialPrice
+	state.DayHigh = scenario.InitialPrice
+	state.TradeHistory = []string{}
+
+	// 初始化博弈数据
+	state.TotalBuyDemandCash = 0
+	state.TotalBuyDemandShares = 0
+	state.TotalSellSupplyShares = 0
+	state.InitialAIAssets = make(map[string]float64)
+
+	// 计算AI初始资产
+	for _, ai := range state.AIs {
+		state.InitialAIAssets[ai.ID] = ai.Cash + float64(ai.Shares)*state.Price
+	}
+
+	// 添加初始日志
+	state.AddLog(fmt.Sprintf("🎯 残局模式：%s", scenario.Name))
+	state.AddLog(fmt.Sprintf("起始: Day %d %s, 股价 $%.2f", scenario.StartDay, scenario.StartSession, scenario.InitialPrice))
+	state.AddLog(fmt.Sprintf("目标收益率: %+.0f%%", scenario.TargetProfit*100))
+
+	return state
 }
 
 func initGame(gameMode string, maxDays int, autoStrategy *AutoStrategy) *GameState {
@@ -2010,8 +2942,9 @@ func calculatePanicIntensity(state *GameState, exitRatios []float64) float64 {
 }
 
 // 计算FOMO追涨强度
-func calculateFOMOIntensity(state *GameState, prices []float64) float64 {
+func calculateFOMOIntensity(state *GameState, _ []float64) float64 {
 	intensity := 0.0
+	// prices 参数保留以便未来基于价格波动分析FOMO强度
 
 	// 因子1: 妖股狂热
 	if state.IsMonsterStock {
@@ -2075,8 +3008,9 @@ func calculateRetailChasing(state *GameState, prices []float64) float64 {
 }
 
 // 生成反身性信号
-func generateReflexivitySignals(metrics ReflexivityMetrics, state *GameState) []ReflexivitySignal {
+func generateReflexivitySignals(metrics ReflexivityMetrics, _ *GameState) []ReflexivitySignal {
 	signals := []ReflexivitySignal{}
+	// state 参数保留以便未来基于游戏状态生成更精准的信号
 
 	// 信号1: 恐慌踩踏
 	if metrics.PanicSellIntensity > 7 && metrics.WhaleHerdingEffect > 0.6 {
@@ -2164,8 +3098,24 @@ func updateCrashProbability(state *GameState, reflexMetrics ReflexivityMetrics) 
 		CrashProbByDay:  make(map[int]float64),
 	}
 
-	// 先验概率 (根据主题难度)
+	// 先验概率 (根据主题难度动态调整)
 	model.Prior = 0.15 // 默认15%
+
+	// 根据主题调整先验概率
+	switch CurrentTheme.Name {
+	case "经典模式":
+		model.Prior = 0.15 // 平衡风险
+	case "科技股狂潮":
+		model.Prior = 0.25 // 泡沫破裂风险高
+	case "新能源泡沫":
+		model.Prior = 0.20 // 政策依赖风险
+	case "疫情周期":
+		model.Prior = 0.22 // 不确定性高
+	case "贸易战周期":
+		model.Prior = 0.18 // 中等风险
+	default:
+		model.Prior = 0.15
+	}
 
 	// 证据与似然比
 	likelihoodRatios := []float64{}
@@ -2336,13 +3286,16 @@ func calculateReversalProbability(state *GameState, histCache *HistoricalStateCa
 			}
 		}
 
-		drawdown := (highestPrice - state.Price) / highestPrice
-		if drawdown > 0.3 {
-			model.OversoldIndicator = 1.0
-		} else if drawdown > 0.2 {
-			model.OversoldIndicator = 0.7
-		} else if drawdown > 0.1 {
-			model.OversoldIndicator = 0.4
+		// 避免除零
+		if highestPrice > 0 {
+			drawdown := (highestPrice - state.Price) / highestPrice
+			if drawdown > 0.3 {
+				model.OversoldIndicator = 1.0
+			} else if drawdown > 0.2 {
+				model.OversoldIndicator = 0.7
+			} else if drawdown > 0.1 {
+				model.OversoldIndicator = 0.4
+			}
 		}
 	}
 
@@ -2355,10 +3308,13 @@ func calculateReversalProbability(state *GameState, histCache *HistoricalStateCa
 		}
 		avgVolume /= 4
 
-		if recentVolume < avgVolume/2 {
-			model.VolumeExhaustion = 0.8
-		} else if recentVolume < int(float64(avgVolume)*0.7) {
-			model.VolumeExhaustion = 0.5
+		// 避免除零
+		if avgVolume > 0 {
+			if recentVolume < avgVolume/2 {
+				model.VolumeExhaustion = 0.8
+			} else if recentVolume < int(float64(avgVolume)*0.7) {
+				model.VolumeExhaustion = 0.5
+			}
 		}
 	}
 
@@ -2473,8 +3429,38 @@ func predictAIBehavior(ai *AI, state *GameState) *AIBehaviorModel {
 	return model
 }
 
+// 辅助函数：将Session转换为整数（用于缓存key）
+func sessionToInt(session string) int {
+	switch session {
+	case "集合竞价":
+		return 0
+	case "早盘":
+		return 1
+	case "午盘":
+		return 2
+	case "尾盘":
+		return 3
+	default:
+		return 0
+	}
+}
+
+// 辅助函数：计算总回合数
+func calculateTurnNumber(day int, session string) int {
+	// 每天4个session（集合竞价、早盘、午盘、尾盘）
+	baseTurns := (day - 1) * 4
+	sessionTurn := sessionToInt(session)
+	return baseTurns + sessionTurn
+}
+
 // 生成高级分析（整合反身性+贝叶斯）
 func generateAdvancedAnalysis(state *GameState, histCache *HistoricalStateCache) AdvancedAnalysis {
+	// 检查缓存（同一回合内复用分析结果）
+	currentTurn := state.Day*10 + sessionToInt(state.Session)
+	if GlobalCache.IsValid && GlobalCache.LastUpdateTurn == currentTurn {
+		return GlobalCache.LastAnalysis
+	}
+
 	analysis := AdvancedAnalysis{}
 
 	// 1. 基础建议（保持原有逻辑）
@@ -2489,8 +3475,8 @@ func generateAdvancedAnalysis(state *GameState, histCache *HistoricalStateCache)
 
 	// 4. 综合风险评分 (0-100)
 	riskScore := 0.0
-	riskScore += analysis.BayesianAnalysis.CrashProbability.Posterior * 40                                // 崩盘概率权重40%
-	riskScore += analysis.ReflexivityMetrics.PanicSellIntensity * 3                                       // 恐慌强度权重30%
+	riskScore += analysis.BayesianAnalysis.CrashProbability.Posterior * 40                      // 崩盘概率权重40%
+	riskScore += analysis.ReflexivityMetrics.PanicSellIntensity * 3                             // 恐慌强度权重30%
 	riskScore += (1.0 - analysis.BayesianAnalysis.ReversalProbability.RecoveryProbability) * 30 // 反转概率权重30%
 
 	if riskScore > 100 {
@@ -2537,11 +3523,106 @@ func generateAdvancedAnalysis(state *GameState, histCache *HistoricalStateCache)
 	}
 	analysis.KeyInsights = insights
 
+	// 更新缓存
+	GlobalCache.LastAnalysis = analysis
+	GlobalCache.LastUpdateTurn = currentTurn
+	GlobalCache.IsValid = true
+
 	return analysis
+}
+
+// 渲染反身性趋势图 (ASCII 艺术)
+func renderReflexivityTrend(metrics ReflexivityMetrics) string {
+	if len(metrics.RecentPriceChanges) < 3 {
+		return "数据不足"
+	}
+
+	// 使用最近的数据点（最多10个）
+	data := metrics.RecentPriceChanges
+	if len(data) > 10 {
+		data = data[len(data)-10:]
+	}
+
+	// 计算相对变化率（归一化到0-8范围）
+	min, max := data[0], data[0]
+	for _, v := range data {
+		if v < min {
+			min = v
+		}
+		if v > max {
+			max = v
+		}
+	}
+
+	// 避免除零
+	if max-min < 0.01 {
+		return "价格波动过小"
+	}
+
+	// 映射到 0-8 的柱状图高度
+	bars := []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
+	var trend string
+	for _, price := range data {
+		normalized := (price - min) / (max - min)
+		index := int(normalized * 7)
+		if index > 7 {
+			index = 7
+		}
+		trend += bars[index]
+	}
+
+	return trend
+}
+
+// 教学提示函数
+func showEducationTip(signalType string) {
+	if !GlobalSettings.ShowEducation {
+		return
+	}
+
+	if SeenSignals[signalType] {
+		return // 已经看过了
+	}
+
+	SeenSignals[signalType] = true
+	GlobalStats.ReflexivityPatternsSeen[signalType]++
+
+	fmt.Printf("\n%s┌────────────────── 📚 反身性小课堂 ──────────────────┐%s\n", Yellow, Reset)
+
+	switch signalType {
+	case "恐慌踩踏":
+		fmt.Printf("%s│%s  【恐慌踩踏】是典型的自我强化下跌循环：\n", Yellow, Reset)
+		fmt.Printf("%s│%s  大资金出逃 → 价格下跌 → 散户恐慌 → 更多人卖出 → 加速下跌\n", Yellow, Reset)
+		fmt.Printf("%s│%s  🎯 应对策略：提前识别信号，在踩踏开始前离场\n", Yellow, Reset)
+	case "FOMO狂热":
+		fmt.Printf("%s│%s  【FOMO狂热】是情绪推动的泡沫循环：\n", Yellow, Reset)
+		fmt.Printf("%s│%s  价格上涨 → FOMO情绪 → 散户追涨 → 价格进一步上涨 → 泡沫积聚\n", Yellow, Reset)
+		fmt.Printf("%s│%s  🎯 应对策略：保持理性，在极度狂热时逐步减仓\n", Yellow, Reset)
+	case "大资金出逃":
+		fmt.Printf("%s│%s  【大资金出逃】意味着聪明钱已经开始撤退：\n", Yellow, Reset)
+		fmt.Printf("%s│%s  游资形成羊群效应，主力资金有序撤离\n", Yellow, Reset)
+		fmt.Printf("%s│%s  🎯 应对策略：跟随大资金的脚步，不要做最后的接盘侠\n", Yellow, Reset)
+	case "散户接盘":
+		fmt.Printf("%s│%s  【散户接盘】是典型的反身性陷阱：\n", Yellow, Reset)
+		fmt.Printf("%s│%s  散户高位追涨接盘，而大资金正在出货\n", Yellow, Reset)
+		fmt.Printf("%s│%s  🎯 应对策略：避免在价格高位追涨，警惕大资金动向\n", Yellow, Reset)
+	case "价格泡沫":
+		fmt.Printf("%s│%s  【价格泡沫】表示价格已严重脱离基本面：\n", Yellow, Reset)
+		fmt.Printf("%s│%s  市场情绪推动价格远离合理估值\n", Yellow, Reset)
+		fmt.Printf("%s│%s  🎯 应对策略：泡沫必然破裂，及时止盈\n", Yellow, Reset)
+	}
+
+	fmt.Printf("%s└──────────────────────────────────────────────────────┘%s\n", Yellow, Reset)
+	fmt.Println("\n按 Enter 继续...")
+	fmt.Scanln()
 }
 
 // 显示高级量化分析
 func displayAdvancedAnalysis(analysis AdvancedAnalysis) {
+	if !GlobalSettings.ShowAdvancedAnalysis {
+		return // 用户关闭了高级分析
+	}
+
 	fmt.Printf("\n%s┌─────────── 🧠 高级量化分析 (反身性+贝叶斯) ───────────┐%s\n", Cyan, Reset)
 
 	// ===== 反身性信号 =====
@@ -2557,10 +3638,17 @@ func displayAdvancedAnalysis(analysis AdvancedAnalysis) {
 			fmt.Printf("%s│%s    %s %s%s%s (强度: %.1f/10)\n",
 				Cyan, Reset, icon, color, signal.Type, Reset, signal.Strength)
 			fmt.Printf("%s│%s       └─ %s\n", Cyan, Reset, signal.Description)
+
+			// 显示教学提示（首次出现时）
+			showEducationTip(signal.Type)
 		}
 	} else {
 		fmt.Printf("%s│%s  【反身性信号】%s 暂无明显反身性效应%s\n", Cyan, Reset, Green, Reset)
 	}
+
+	// ===== 价格趋势可视化 =====
+	trend := renderReflexivityTrend(analysis.ReflexivityMetrics)
+	fmt.Printf("%s│%s  【价格走势】 %s\n", Cyan, Reset, trend)
 
 	// ===== 贝叶斯概率分析 =====
 	fmt.Printf("%s│%s  【贝叶斯概率推演】\n", Cyan, Reset)
@@ -2870,6 +3958,9 @@ func max(a, b float64) float64 {
 }
 
 func processTurn(state *GameState) {
+	fmt.Printf("\n"+Cyan+"  [ 第%d天 %s 撮合清算中... ]"+Reset+"\n", state.Day, state.Session)
+	time.Sleep(400 * time.Millisecond)
+
 	// 1. 清空上回合盘口数据
 	state.TotalBuyDemandCash = 0
 	state.TotalSellSupplyShares = 0
@@ -3199,7 +4290,7 @@ func processTurn(state *GameState) {
 				state.RetailSelling += actualSell
 			}
 			if ai.StatusFlag == "ForcedLiquidation" {
-				state.AddLog(fmt.Sprintf("%s 💥 爆仓强平: %s 资金链断裂被强制清场%s", Red, ai.Name, Reset))
+				state.SpeakLog(fmt.Sprintf("%s 💥 爆仓强平: %s 资金链断裂被强制清场%s", Red, ai.Name, Reset))
 			}
 		} else if ai.OrderType == "Buy" {
 			actualBuy := int(float64(int(ai.OrderCash/state.Price)) * buyProration)
@@ -3209,12 +4300,12 @@ func processTurn(state *GameState) {
 				ai.Shares += actualBuy
 				ai.Cost = (oldTotal + cost) / float64(ai.Shares)
 				ai.Cash -= cost
-				if ai.Type == "Whale" && actualBuy > 1000 {
-					state.AddLog(fmt.Sprintf("%s 🐋 游资进场: %s 抢筹 %d 股%s", Green, ai.Name, actualBuy, Reset))
-				}
-				if ai.StatusFlag == "Bailout" {
-					state.AddLog(fmt.Sprintf("%s 🛡️ 国家队救市: %s 开启无限额护盘%s", Red, ai.Name, Reset))
-				}
+			if ai.Type == "Whale" && actualBuy > 1000 {
+				state.SpeakLog(fmt.Sprintf("%s 🐋 游资进场: %s 抢筹 %d 股%s", Green, ai.Name, actualBuy, Reset))
+			}
+			if ai.StatusFlag == "Bailout" {
+				state.SpeakLog(fmt.Sprintf("%s 🛡️ 国家队救市: %s 开启无限额护盘%s", Red, ai.Name, Reset))
+			}
 			}
 			if ai.Type == "Whale" {
 				state.WhaleBuying += actualBuy
@@ -3329,7 +4420,151 @@ func max_int(a, b int) int {
 	return b
 }
 
-// 渲染 K线趋势图 (Sparkline)
+// 渲染增强版K线图表
+func renderEnhancedKLine(state *GameState) {
+	if len(state.PriceHistory) < 5 || len(state.VolumeHistory) < 1 {
+		return
+	}
+
+	// 取最近40个数据点
+	displayPoints := 40
+	if len(state.PriceHistory) < displayPoints {
+		displayPoints = len(state.PriceHistory)
+	}
+	if len(state.VolumeHistory) < displayPoints {
+		displayPoints = len(state.VolumeHistory)
+	}
+	history := state.PriceHistory[len(state.PriceHistory)-displayPoints:]
+	volumeHistory := state.VolumeHistory[len(state.VolumeHistory)-displayPoints:]
+
+	// 计算价格范围
+	minPrice := history[0]
+	maxPrice := history[0]
+	for _, p := range history {
+		if p < minPrice {
+			minPrice = p
+		}
+		if p > maxPrice {
+			maxPrice = p
+		}
+	}
+	priceRange := maxPrice - minPrice
+	if priceRange == 0 {
+		priceRange = 1
+	}
+
+	// 图表高度
+	chartHeight := 12
+
+	fmt.Printf("\n%s┌─────────────────── 📈 增强K线图 (最近%d点) ─────────────────┐%s\n",
+		Cyan, displayPoints, Reset)
+
+	// 渲染价格K线（从上到下）
+	for row := chartHeight; row >= 0; row-- {
+		// 左侧价格标签
+		priceAtRow := minPrice + (float64(row)/float64(chartHeight))*priceRange
+		fmt.Printf("%s│%s %s$%6.2f%s │", Cyan, Reset, Yellow, priceAtRow, Reset)
+
+		// 绘制K线
+		for i, price := range history {
+			normalized := (price - minPrice) / priceRange
+			barHeight := int(normalized * float64(chartHeight))
+
+			// 判断涨跌
+			isRising := true
+			if i > 0 {
+				isRising = price >= history[i-1]
+			}
+
+			// 当前行是否有K线
+			var char string
+			if barHeight == row {
+				if isRising {
+					char = Green + "█" + Reset
+				} else {
+					char = Red + "█" + Reset
+				}
+			} else if barHeight > row {
+				if isRising {
+					char = Green + "│" + Reset
+				} else {
+					char = Red + "│" + Reset
+				}
+			} else {
+				char = " "
+			}
+
+			fmt.Print(char)
+		}
+
+		// 右侧标注
+		if row == chartHeight {
+			fmt.Printf(" %s%.2f%s", Red, maxPrice, Reset)
+		} else if row == 0 {
+			fmt.Printf(" %s%.2f%s", Green, minPrice, Reset)
+		} else if row == chartHeight/2 {
+			avgPrice := (maxPrice + minPrice) / 2
+			fmt.Printf(" %s%.2f%s", Yellow, avgPrice, Reset)
+		}
+
+		fmt.Println()
+	}
+
+	// 底部边框
+	fmt.Printf("%s│%s ────────┼", Cyan, Reset)
+	for range history {
+		fmt.Print("─")
+	}
+	fmt.Println()
+
+	// 成交量柱状图
+	fmt.Printf("%s│%s %s成交量%s  │", Cyan, Reset, Yellow, Reset)
+
+	maxVolume := volumeHistory[0]
+	for _, v := range volumeHistory {
+		if v > maxVolume {
+			maxVolume = v
+		}
+	}
+
+	volumeBars := []rune(" ▁▂▃▄▅▆▇█")
+	for _, vol := range volumeHistory {
+		normalized := float64(vol) / float64(maxVolume)
+		idx := int(normalized * float64(len(volumeBars)-1))
+		if idx >= len(volumeBars) {
+			idx = len(volumeBars) - 1
+		}
+		fmt.Printf("%s%c%s", Blue, volumeBars[idx], Reset)
+	}
+	fmt.Println()
+
+	// 统计信息
+	fmt.Printf("%s│%s  %s涨%s: %sMA5=%.2f%s  %sMA10=%.2f%s  %s当前=%.2f%s\n",
+		Cyan, Reset, Green, Reset,
+		Yellow, calculateMA(history, 5), Reset,
+		Yellow, calculateMA(history, 10), Reset,
+		Yellow, state.Price, Reset)
+
+	fmt.Printf("%s└───────────────────────────────────────────────────────────────┘%s\n", Cyan, Reset)
+}
+
+// 计算移动平均线
+func calculateMA(prices []float64, period int) float64 {
+	if len(prices) < period {
+		period = len(prices)
+	}
+	if period == 0 {
+		return 0
+	}
+
+	sum := 0.0
+	for i := len(prices) - period; i < len(prices); i++ {
+		sum += prices[i]
+	}
+	return sum / float64(period)
+}
+
+// 渲染 K线趋势图 (Sparkline) - 保留原版用于简单显示
 func renderSparkline(history []float64) string {
 	if len(history) == 0 {
 		return ""
@@ -3528,6 +4763,505 @@ func renderEventCard(event Event, animate bool) {
 	fmt.Printf("  %s╰──────────────────────────────────────────╯%s\n", Purple, Reset)
 }
 
+// 渲染关键警报（闪烁效果）
+func renderCriticalAlerts(state *GameState) {
+	const Blink = "\033[5m"     // ANSI闪烁代码
+	const Bold = "\033[1m"      // 粗体
+	const BlinkOff = "\033[25m" // 关闭闪烁
+
+	alerts := []string{}
+
+	// 1. 崩盘预警
+	if state.CrashWarningLevel >= 4 {
+		alerts = append(alerts, fmt.Sprintf("%s%s%s🚨🚨 市场崩盘警报！立即离场！ 🚨🚨%s%s",
+			Bold, Blink, Red, BlinkOff, Reset))
+	} else if state.CrashWarningLevel >= 3 {
+		alerts = append(alerts, fmt.Sprintf("%s%s%s⚠️  高度崩盘风险，建议减仓%s%s",
+			Bold, Blink, Red, BlinkOff, Reset))
+	}
+
+	// 2. 爆仓风险
+	if state.MarginDebt > 0 {
+		netAsset := float64(state.PlayerShares)*state.Price + state.PlayerCash
+		if netAsset <= state.MarginDebt*1.1 {
+			alerts = append(alerts, fmt.Sprintf("%s%s%s💥💥 爆仓警告！距离强平仅%.0f%% 💥💥%s%s",
+				Bold, Blink, Red, (netAsset/state.MarginDebt-1)*100, BlinkOff, Reset))
+		} else if netAsset <= state.MarginDebt*1.3 {
+			alerts = append(alerts, fmt.Sprintf("%s%s%s⚡ 接近爆仓线，警惕风险！%s%s",
+				Bold, Blink, Yellow, BlinkOff, Reset))
+		}
+	}
+
+	// 3. 残局模式倒计时
+	if state.IsEndgameMode && state.EndgameScenario != nil {
+		currentTurn := calculateTurnNumberHelper(state.Day, state.Session)
+		elapsedTurns := currentTurn - state.EndgameStartTurn
+		remainingTurns := state.EndgameScenario.TimeLimit - elapsedTurns
+
+		if remainingTurns <= 3 && remainingTurns > 0 {
+			alerts = append(alerts, fmt.Sprintf("%s%s%s⏰ 残局倒计时：仅剩%d回合！%s%s",
+				Bold, Blink, Red, remainingTurns, BlinkOff, Reset))
+		}
+	}
+
+	// 4. 大资金集体出逃
+	whaleEscaped := 0
+	for _, ai := range state.AIs {
+		if ai.Type == "Whale" && ai.HasSold {
+			whaleEscaped++
+		}
+	}
+	totalWhales := 0
+	for _, ai := range state.AIs {
+		if ai.Type == "Whale" {
+			totalWhales++
+		}
+	}
+	if totalWhales > 0 && float64(whaleEscaped)/float64(totalWhales) >= 0.6 {
+		alerts = append(alerts, fmt.Sprintf("%s%s%s🐋 大资金集体出逃（%d/%d已离场）%s%s",
+			Bold, Blink, Red, whaleEscaped, totalWhales, BlinkOff, Reset))
+	}
+
+	// 5. 极端波动
+	if len(state.PriceHistory) >= 2 {
+		lastPrice := state.PriceHistory[len(state.PriceHistory)-2]
+		change := math.Abs((state.Price - lastPrice) / lastPrice)
+		if change >= 0.15 {
+			direction := "暴涨"
+			if state.Price < lastPrice {
+				direction = "暴跌"
+			}
+			alerts = append(alerts, fmt.Sprintf("%s%s%s⚡ 单回合%s%.0f%%，极端波动！%s%s",
+				Bold, Blink, Yellow, direction, change*100, BlinkOff, Reset))
+		}
+	}
+
+	// 6. 连续跌停风险
+	if state.ConsecutiveFallDays >= 3 {
+		alerts = append(alerts, fmt.Sprintf("%s%s%s📉 已连续下跌%d天，跌停风险！%s%s",
+			Bold, Blink, Red, state.ConsecutiveFallDays, BlinkOff, Reset))
+	}
+
+	// 显示警报
+	if len(alerts) > 0 {
+		fmt.Printf("\n%s%s╔═══════════════════ ⚠️  紧急警报 ⚠️  ═══════════════════╗%s%s\n",
+			Bold, Red, Reset, Reset)
+		for _, alert := range alerts {
+			fmt.Printf("%s║%s  %s\n", Red, Reset, alert)
+		}
+		fmt.Printf("%s╚═══════════════════════════════════════════════════════════╝%s\n", Red, Reset)
+	}
+}
+
+// 渲染动态风险热力图
+func renderRiskHeatmap(state *GameState) {
+	// 计算各维度风险值 (0-100)
+
+	// 1. 崩盘风险
+	crashRisk := float64(state.CrashWarningLevel) * 25.0
+	if crashRisk > 100 {
+		crashRisk = 100
+	}
+
+	// 2. AI逃跑风险
+	escapedCount := 0
+	whaleEscaped := 0
+	for _, ai := range state.AIs {
+		if ai.HasSold {
+			escapedCount++
+			if ai.Type == "Whale" {
+				whaleEscaped++
+			}
+		}
+	}
+	aiExodusRisk := (float64(escapedCount) / float64(len(state.AIs))) * 100
+	if whaleEscaped >= 3 {
+		aiExodusRisk = math.Min(aiExodusRisk+30, 100)
+	}
+
+	// 3. 价格波动风险
+	priceVolatility := 0.0
+	if len(state.PriceHistory) >= 5 {
+		recentPrices := state.PriceHistory[len(state.PriceHistory)-5:]
+		avgPrice := 0.0
+		for _, p := range recentPrices {
+			avgPrice += p
+		}
+		avgPrice /= float64(len(recentPrices))
+
+		variance := 0.0
+		for _, p := range recentPrices {
+			variance += math.Pow(p-avgPrice, 2)
+		}
+		stdDev := math.Sqrt(variance / float64(len(recentPrices)))
+		priceVolatility = (stdDev / avgPrice) * 1000 // 放大到0-100范围
+		if priceVolatility > 100 {
+			priceVolatility = 100
+		}
+	}
+
+	// 4. 杠杆风险
+	leverageRisk := 0.0
+	if state.MarginDebt > 0 {
+		netAsset := float64(state.PlayerShares)*state.Price + state.PlayerCash
+		leverageRatio := state.MarginDebt / math.Max(netAsset, 1)
+		leverageRisk = leverageRatio * 50 // 2倍杠杆=100风险
+		if leverageRisk > 100 {
+			leverageRisk = 100
+		}
+	}
+
+	// 5. 流动性风险
+	liquidityRisk := 0.0
+	if state.ConsecutiveFallDays >= 3 {
+		liquidityRisk = 60.0
+	} else if state.ConsecutiveFallDays >= 2 {
+		liquidityRisk = 40.0
+	}
+	// 加上AI逃跑带来的流动性枯竭
+	if aiExodusRisk > 50 {
+		liquidityRisk += (aiExodusRisk - 50) * 0.8
+	}
+	if liquidityRisk > 100 {
+		liquidityRisk = 100
+	}
+
+	// 6. 情绪风险 (FOMO/恐慌)
+	sentimentRisk := 0.0
+	if state.CurrentEvent.Sentiment > 1.4 {
+		sentimentRisk = 80.0 // 极度乐观=高风险
+	} else if state.CurrentEvent.Sentiment > 1.2 {
+		sentimentRisk = 50.0
+	} else if state.CurrentEvent.FearModifier > 2.5 {
+		sentimentRisk = 90.0 // 极度恐慌=高风险
+	} else if state.CurrentEvent.FearModifier > 2.0 {
+		sentimentRisk = 60.0
+	}
+
+	// 综合风险评分
+	totalRisk := (crashRisk*0.25 + aiExodusRisk*0.20 + priceVolatility*0.15 +
+		leverageRisk*0.20 + liquidityRisk*0.10 + sentimentRisk*0.10)
+
+	// 渲染热力图
+	fmt.Printf("\n%s╔═══════════════════ 🔥 动态风险热力图 ═══════════════════╗%s\n", Red, Reset)
+
+	// 渲染函数：根据风险值返回渐变色和条形图
+	renderRiskBar := func(label string, risk float64) {
+		barWidth := 30
+		filled := int(risk / 100 * float64(barWidth))
+		if filled > barWidth {
+			filled = barWidth
+		}
+
+		// 渐变色：绿->黄->橙->红
+		var barColor string
+		var riskLabel string
+		if risk < 25 {
+			barColor = Green
+			riskLabel = "安全"
+		} else if risk < 50 {
+			barColor = Yellow
+			riskLabel = "警惕"
+		} else if risk < 75 {
+			barColor = "\033[38;5;208m" // 橙色
+			riskLabel = "危险"
+		} else {
+			barColor = Red
+			riskLabel = "极危"
+		}
+
+		bar := barColor + strings.Repeat("█", filled) + Reset +
+			strings.Repeat("░", barWidth-filled)
+
+		fmt.Printf("%s║%s  %-10s [%s] %s%3.0f%% %s%s\n",
+			Red, Reset, label, bar, barColor, risk, riskLabel, Reset)
+	}
+
+	// 显示各项风险
+	renderRiskBar("崩盘风险", crashRisk)
+	renderRiskBar("AI出逃", aiExodusRisk)
+	renderRiskBar("价格波动", priceVolatility)
+	renderRiskBar("杠杆风险", leverageRisk)
+	renderRiskBar("流动性", liquidityRisk)
+	renderRiskBar("情绪风险", sentimentRisk)
+
+	fmt.Printf("%s║%s  %s\n", Red, Reset, strings.Repeat("─", 56))
+
+	// 综合评估
+	overallColor := Green
+	overallLabel := "✅ 相对安全"
+	overallIcon := "🟢"
+	if totalRisk >= 75 {
+		overallColor = Red
+		overallLabel = "🚨 极度危险"
+		overallIcon = "🔴"
+	} else if totalRisk >= 50 {
+		overallColor = "\033[38;5;208m"
+		overallLabel = "⚠️  高度警惕"
+		overallIcon = "🟠"
+	} else if totalRisk >= 25 {
+		overallColor = Yellow
+		overallLabel = "⚡ 谨慎操作"
+		overallIcon = "🟡"
+	}
+
+	fmt.Printf("%s║%s  %s 综合风险: %s%.0f/100 %s%s\n",
+		Red, Reset, overallIcon, overallColor, totalRisk, overallLabel, Reset)
+
+	// 关键建议
+	if totalRisk >= 75 && state.PlayerShares > 0 {
+		fmt.Printf("%s║%s  %s💥 建议: 立即减仓或清仓离场！%s\n", Red, Reset, Red, Reset)
+	} else if leverageRisk > 60 && state.MarginDebt > 0 {
+		fmt.Printf("%s║%s  %s⚠️  建议: 杠杆过高，警惕爆仓风险！%s\n", Red, Reset, Yellow, Reset)
+	} else if aiExodusRisk > 70 {
+		fmt.Printf("%s║%s  %s⚠️  建议: 大量AI已逃离，流动性危机！%s\n", Red, Reset, Yellow, Reset)
+	} else if totalRisk < 30 && state.PlayerShares == 0 {
+		fmt.Printf("%s║%s  %s💡 提示: 当前风险较低，可考虑入场%s\n", Red, Reset, Green, Reset)
+	}
+
+	fmt.Printf("%s╚═══════════════════════════════════════════════════════════╝%s\n", Red, Reset)
+}
+
+// 渲染AI资金流向雷达
+func renderAIMoneyFlowRadar(state *GameState) {
+	// 统计各类AI的资金流向
+	whaleInflow := 0.0
+	whaleOutflow := 0.0
+	quantInflow := 0.0
+	quantOutflow := 0.0
+	retailInflow := 0.0
+	retailOutflow := 0.0
+
+	activeWhales := 0
+	activeQuants := 0
+	activeRetails := 0
+
+	for _, ai := range state.AIs {
+		if ai.HasSold || ai.Shares == 0 {
+			// 已出货的AI计入资金流出
+			if ai.Type == "Whale" {
+				whaleOutflow += ai.Cash
+			} else if ai.Type == "Quant" {
+				quantOutflow += ai.Cash
+			} else {
+				retailOutflow += ai.Cash
+			}
+		} else {
+			// 持仓AI的市值算流入
+			marketValue := float64(ai.Shares) * state.Price
+			if ai.Type == "Whale" {
+				whaleInflow += marketValue
+				activeWhales++
+			} else if ai.Type == "Quant" {
+				quantInflow += marketValue
+				activeQuants++
+			} else {
+				retailInflow += marketValue
+				activeRetails++
+			}
+		}
+	}
+
+	// 计算净流向
+	whaleNet := whaleInflow - whaleOutflow
+	quantNet := quantInflow - quantOutflow
+	retailNet := retailInflow - retailOutflow
+
+	// 雷达图渲染
+	fmt.Printf("\n%s╔═══════════════════ 📡 AI资金流向雷达 ═══════════════════╗%s\n", Purple, Reset)
+	fmt.Printf("%s║%s", Purple, Reset)
+
+	// 第一行：Whale状态
+	whaleColor := Green
+	whaleArrow := "↑"
+	if whaleNet < 0 {
+		whaleColor = Red
+		whaleArrow = "↓"
+	}
+	fmt.Printf("  %s🐋 大资金%s: %s%s $%.0fk%s (%d个活跃)",
+		Purple, Reset, whaleColor, whaleArrow, math.Abs(whaleNet)/1000, Reset, activeWhales)
+
+	// 雷达可视化符号
+	whalePower := math.Min(math.Abs(whaleNet)/50000, 5) // 最多5个箭头
+	whaleRadar := strings.Repeat(whaleArrow, int(whalePower))
+	if whaleRadar == "" {
+		whaleRadar = "─"
+	}
+	fmt.Printf(" [%s%s%s]\n", whaleColor, whaleRadar, Reset)
+
+	fmt.Printf("%s║%s", Purple, Reset)
+
+	// 第二行：Quant状态
+	quantColor := Green
+	quantArrow := "↑"
+	if quantNet < 0 {
+		quantColor = Red
+		quantArrow = "↓"
+	}
+	fmt.Printf("  %s🤖 量化队%s: %s%s $%.0fk%s (%d个活跃)",
+		Blue, Reset, quantColor, quantArrow, math.Abs(quantNet)/1000, Reset, activeQuants)
+
+	quantPower := math.Min(math.Abs(quantNet)/30000, 5)
+	quantRadar := strings.Repeat(quantArrow, int(quantPower))
+	if quantRadar == "" {
+		quantRadar = "─"
+	}
+	fmt.Printf(" [%s%s%s]\n", quantColor, quantRadar, Reset)
+
+	fmt.Printf("%s║%s", Purple, Reset)
+
+	// 第三行：Retail状态
+	retailColor := Green
+	retailArrow := "↑"
+	if retailNet < 0 {
+		retailColor = Red
+		retailArrow = "↓"
+	}
+	fmt.Printf("  %s🥬 散户群%s: %s%s $%.0fk%s (%d个活跃)",
+		Green, Reset, retailColor, retailArrow, math.Abs(retailNet)/1000, Reset, activeRetails)
+
+	retailPower := math.Min(math.Abs(retailNet)/20000, 5)
+	retailRadar := strings.Repeat(retailArrow, int(retailPower))
+	if retailRadar == "" {
+		retailRadar = "─"
+	}
+	fmt.Printf(" [%s%s%s]\n", retailColor, retailRadar, Reset)
+
+	// 第四行：市场情绪总结
+	totalNet := whaleNet + quantNet + retailNet
+	marketSentiment := "平衡"
+	sentimentColor := Yellow
+	sentimentIcon := "⚖️"
+
+	if totalNet > 50000 {
+		marketSentiment = "强势流入"
+		sentimentColor = Green
+		sentimentIcon = "🚀"
+	} else if totalNet > 20000 {
+		marketSentiment = "温和流入"
+		sentimentColor = Green
+		sentimentIcon = "📈"
+	} else if totalNet < -50000 {
+		marketSentiment = "恐慌出逃"
+		sentimentColor = Red
+		sentimentIcon = "💥"
+	} else if totalNet < -20000 {
+		marketSentiment = "资金撤离"
+		sentimentColor = Red
+		sentimentIcon = "📉"
+	}
+
+	fmt.Printf("%s║%s  %s 总体态势: %s%s%s (净流向: %s$%.0fk%s)\n",
+		Purple, Reset, sentimentIcon, sentimentColor, marketSentiment, Reset,
+		sentimentColor, totalNet/1000, Reset)
+
+	// 关键预警
+	if whaleNet < -100000 && activeWhales <= 2 {
+		fmt.Printf("%s║%s  %s⚠️  警告: 大资金大规模撤离，市场流动性危机！%s\n", Purple, Reset, Red, Reset)
+	} else if whaleNet > 100000 && retailNet < -50000 {
+		fmt.Printf("%s║%s  %s💡 注意: 大资金入场而散户逃离，可能是主力建仓%s\n", Purple, Reset, Yellow, Reset)
+	} else if retailNet > 80000 && whaleNet < -50000 {
+		fmt.Printf("%s║%s  %s⚠️  警告: 散户疯狂追涨而大资金出货，典型出货信号！%s\n", Purple, Reset, Red, Reset)
+	}
+
+	fmt.Printf("%s╚═══════════════════════════════════════════════════════════╝%s\n", Purple, Reset)
+}
+
+// 渲染残局模式专属HUD
+func renderEndgameHUD(state *GameState) {
+	if state.EndgameScenario == nil {
+		return
+	}
+
+	scenario := state.EndgameScenario
+
+	// 难度颜色
+	diffColor := Green
+	diffIcon := "⭐"
+	switch scenario.Difficulty {
+	case "简单":
+		diffColor = Green
+		diffIcon = "⭐"
+	case "中等":
+		diffColor = Yellow
+		diffIcon = "⭐⭐"
+	case "困难":
+		diffColor = Red
+		diffIcon = "⭐⭐⭐"
+	case "地狱":
+		diffColor = Purple
+		diffIcon = "🔥🔥🔥"
+	}
+
+	// 计算进度
+	currentTurn := calculateTurnNumberHelper(state.Day, state.Session)
+	elapsedTurns := currentTurn - state.EndgameStartTurn
+	totalTurns := scenario.TimeLimit
+	progressPercent := float64(elapsedTurns) / float64(totalTurns) * 100
+	if progressPercent > 100 {
+		progressPercent = 100
+	}
+
+	// 进度条渲染
+	barWidth := 30
+	filledWidth := int(progressPercent / 100 * float64(barWidth))
+	if filledWidth > barWidth {
+		filledWidth = barWidth
+	}
+
+	progressColor := Green
+	if progressPercent > 75 {
+		progressColor = Red
+	} else if progressPercent > 50 {
+		progressColor = Yellow
+	}
+
+	progressBar := progressColor + strings.Repeat("█", filledWidth) + Reset +
+		strings.Repeat("░", barWidth-filledWidth)
+
+	// 盈利计算
+	netAsset := float64(state.PlayerShares)*state.Price + state.PlayerCash - state.MarginDebt
+	currentProfit := ((netAsset - state.InitialAsset) / state.InitialAsset) * 100
+	targetProfit := scenario.TargetProfit * 100
+
+	profitColor := Red
+	profitStatus := "未达标"
+	if currentProfit >= targetProfit {
+		profitColor = Green
+		profitStatus = "✓ 已达标"
+	}
+
+	// 渲染HUD
+	fmt.Printf("\n%s╔═══════════════════════ 🎯 残局挑战 ═══════════════════════╗%s\n", Purple, Reset)
+	fmt.Printf("%s║%s  关卡: %s%s%s (难度: %s%s%s)\n",
+		Purple, Reset, Cyan, scenario.Name, Reset, diffColor, diffIcon, Reset)
+	fmt.Printf("%s║%s  进度: [%s] %d/%d 回合 (%.0f%%)\n",
+		Purple, Reset, progressBar, elapsedTurns, totalTurns, progressPercent)
+	fmt.Printf("%s║%s  目标: 盈利 %s%.1f%%%s  |  当前: %s%.1f%% %s%s\n",
+		Purple, Reset, Yellow, targetProfit, Reset, profitColor, currentProfit, profitStatus, Reset)
+
+	// 教学要点（显示前2个）
+	if len(scenario.TeachingPoints) > 0 {
+		fmt.Printf("%s║%s  要点: ", Purple, Reset)
+		for i := 0; i < len(scenario.TeachingPoints) && i < 2; i++ {
+			if i > 0 {
+				fmt.Printf(" • ")
+			}
+			fmt.Printf("%s%s%s", Yellow, scenario.TeachingPoints[i], Reset)
+		}
+		fmt.Println()
+	}
+
+	// 时间警告
+	if progressPercent > 80 {
+		remainingTurns := totalTurns - elapsedTurns
+		fmt.Printf("%s║%s  %s⚠️  警告: 仅剩 %d 回合！%s\n",
+			Purple, Reset, Red, remainingTurns, Reset)
+	}
+
+	fmt.Printf("%s╚═══════════════════════════════════════════════════════════╝%s\n", Purple, Reset)
+}
+
 // 渲染进度条（用于多空对比）
 func renderProgressBar(label string, val1, val2 int, color1, color2 string) string {
 	total := val1 + val2
@@ -3542,7 +5276,8 @@ func renderProgressBar(label string, val1, val2 int, color1, color2 string) stri
 }
 
 func renderFrame(state *GameState, histCache *HistoricalStateCache) {
-	fmt.Print("\033[H\033[2J\033[3J") // 深度清屏（含滚动缓冲区）
+	// 仅重置光标到顶部 (H)，不清除整个历史，允许之前的处理日志“往下滚动”
+	fmt.Print("\033[H") 
 
 	// ── 环境氛围渲染 ──
 	borderColor := Cyan
@@ -3586,9 +5321,22 @@ func renderFrame(state *GameState, histCache *HistoricalStateCache) {
 		borderColor, Reset, Cyan, title, data.Level, Reset, data.IntelPoints, borderColor, Yellow, state.Day, sessionColor, state.Session, Reset, marketMood)
 	fmt.Printf("%s║%s  现价: %s$%.2f %s (%+.2f%%)%s  │  日内: %s$%.2f - $%.2f%s\n",
 		borderColor, Reset, priceColor, state.Price, arrow, change, Reset, Yellow, state.DayLow, state.DayHigh, Reset)
+	// 计算换手率（安全访问VolumeHistory）
+	turnoverRate := 0.0
+	if len(state.VolumeHistory) > 0 && state.TotalMarketShares > 0 {
+		turnoverRate = float64(state.VolumeHistory[len(state.VolumeHistory)-1]) / float64(state.TotalMarketShares) * 100
+	}
 	fmt.Printf("%s║%s  资产: %s$%.0f %s(%+.1f%%)%s  │  日内换手: %.1f%%  │  VIX恐慌: %d/100\n",
-		borderColor, Reset, profitColor, netAsset, profitColor, assetProfit, Reset, float64(state.VolumeHistory[len(state.VolumeHistory)-1])/float64(state.TotalMarketShares)*100, state.CrashWarningLevel*25)
+		borderColor, Reset, profitColor, netAsset, profitColor, assetProfit, Reset, turnoverRate, state.CrashWarningLevel*25)
 	fmt.Printf("%s╚%s╝%s\n", borderColor, strings.Repeat(borderChar, 31), Reset)
+
+	// ── 残局模式HUD ──
+	if state.IsEndgameMode {
+		renderEndgameHUD(state)
+	}
+
+	// ── 关键警报（闪烁提醒）──
+	renderCriticalAlerts(state)
 
 	// ── 市场心理仪表盘 ──
 	if state.DailyFortune != "" {
@@ -3640,7 +5388,7 @@ func renderFrame(state *GameState, histCache *HistoricalStateCache) {
 
 	// 盘口动态 L2 Detail
 	fmt.Printf("%s│%s  盘口: 买盘需求%d / 卖盘抛压%d  │  净流向: %d\n", Cyan, Reset, state.TotalBuyDemandShares, state.TotalSellSupplyShares, state.TotalBuyDemandShares-state.TotalSellSupplyShares)
-	
+
 	fmt.Printf("%s│%s  资金流: ", Cyan, Reset)
 	if state.WhaleSelling > 0 {
 		fmt.Printf("%s🐋砸盘%d %s", Red, state.WhaleSelling, Reset)
@@ -3678,11 +5426,19 @@ func renderFrame(state *GameState, histCache *HistoricalStateCache) {
 	}
 	fmt.Printf("%s└──────────────────────────────────────────────────────────────┘%s\n", Cyan, Reset)
 
+	// ── 增强K线图表 ──
+	if len(state.PriceHistory) >= 10 {
+		renderEnhancedKLine(state)
+	}
+
 	// 显示高级分析（仅当历史数据足够且玩家持有股票时）
 	if state.PlayerShares > 0 && len(histCache.States) >= 3 {
 		advancedAnalysis := generateAdvancedAnalysis(state, histCache)
 		displayAdvancedAnalysis(advancedAnalysis)
 	}
+
+	// ── 动态风险热力图 ──
+	renderRiskHeatmap(state)
 
 	// ── 实时动态 Feed ──
 	fmt.Printf("\n%s┌────────────────────── 📰 市场 Feed ──────────────────────────┐%s\n", Yellow, Reset)
@@ -3694,6 +5450,9 @@ func renderFrame(state *GameState, histCache *HistoricalStateCache) {
 		fmt.Printf("  %s\n", log)
 	}
 	fmt.Printf("%s└──────────────────────────────────────────────────────────────┘%s\n", Yellow, Reset)
+
+	// ── AI资金流向雷达 ──
+	renderAIMoneyFlowRadar(state)
 
 	// ── AI 列表 ──
 	fmt.Printf("\n%s┌────────────────────── 🤖 AI 实时仓位 ──────────────────────┐%s\n", Cyan, Reset)
@@ -3710,7 +5469,7 @@ func renderFrame(state *GameState, histCache *HistoricalStateCache) {
 		if ai.HasSold || ai.Shares == 0 {
 			statusStr = "\033[90m空仓\033[0m"
 		}
-		
+
 		// 恢复并美化特殊状态标签
 		statusFlagStr := ""
 		if ai.StatusFlag == "Spoofing" {
@@ -3851,7 +5610,9 @@ func renderChronicle(state *GameState) {
 		Cyan, "时间", "价格", "涨跌", "玩家", "庄家动向", "市场情绪", Reset)
 	fmt.Println(Cyan + "  " + strings.Repeat("━", 75) + Reset)
 
-	for _, e := range state.Chronicle {
+	// 从最新到最旧显示（倒序遍历）
+	for i := len(state.Chronicle) - 1; i >= 0; i-- {
+		e := state.Chronicle[i]
 		color := Reset
 		if e.Change > 0.03 {
 			color = Red
@@ -3955,7 +5716,171 @@ func diagnoseTrader(state *GameState, rank PlayerRank) (string, string) {
 	return archetype, description
 }
 
-func renderGameOver(state *GameState) {
+// 生成游戏后复盘报告
+func generatePostGameReport(state *GameState, histCache *HistoricalStateCache) {
+	// 文件名：包含时间戳和主题
+	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	filename := fmt.Sprintf("stock_game_report_%s_%s.txt", CurrentTheme.Name, timestamp)
+
+	file, err := os.Create(filename)
+	if err != nil {
+		fmt.Printf(Red+"无法创建报告文件: %v"+Reset+"\n", err)
+		return
+	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+
+	// ===== 报告标题 =====
+	writer.WriteString("╔═══════════════════════════════════════════════════════════════╗\n")
+	writer.WriteString("║              妖股搏杀 - 复盘报告                             ║\n")
+	writer.WriteString("╚═══════════════════════════════════════════════════════════════╝\n\n")
+
+	writer.WriteString(fmt.Sprintf("生成时间: %s\n", time.Now().Format("2006-01-02 15:04:05")))
+	writer.WriteString(fmt.Sprintf("游戏主题: %s\n", CurrentTheme.Name))
+	writer.WriteString(fmt.Sprintf("游戏时长: %d 天 (从 Day 1 到 Day %d)\n", state.Day, state.Day))
+	writer.WriteString(fmt.Sprintf("最终股价: $%.2f\n", state.Price))
+	writer.WriteString(fmt.Sprintf("是否崩盘: %v\n\n", state.IsCrashed))
+
+	// ===== 玩家表现 =====
+	finalAsset := float64(state.PlayerShares)*state.Price + state.PlayerCash - state.MarginDebt
+	profitRate := (finalAsset - 100000) / 100000 * 100
+
+	writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	writer.WriteString("【玩家表现】\n")
+	writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	writer.WriteString(fmt.Sprintf("初始资金: $100,000.00\n"))
+	writer.WriteString(fmt.Sprintf("最终资产: $%.2f\n", finalAsset))
+	writer.WriteString(fmt.Sprintf("收益率: %+.2f%%\n", profitRate))
+	writer.WriteString(fmt.Sprintf("最终持仓: %d 股\n", state.PlayerShares))
+	writer.WriteString(fmt.Sprintf("现金余额: $%.2f\n", state.PlayerCash))
+	if state.MarginDebt > 0 {
+		writer.WriteString(fmt.Sprintf("配资欠款: $%.2f\n", state.MarginDebt))
+	}
+	writer.WriteString("\n")
+
+	// ===== 反身性模式分析 =====
+	writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	writer.WriteString("【反身性模式统计】\n")
+	writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	if len(GlobalStats.ReflexivityPatternsSeen) > 0 {
+		writer.WriteString("本局游戏中出现的反身性模式:\n\n")
+		for pattern, count := range GlobalStats.ReflexivityPatternsSeen {
+			writer.WriteString(fmt.Sprintf("  • %s: 出现 %d 次\n", pattern, count))
+		}
+	} else {
+		writer.WriteString("本局未检测到明显的反身性模式。\n")
+	}
+	writer.WriteString("\n")
+
+	// ===== 贝叶斯预测准确性 =====
+	writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	writer.WriteString("【贝叶斯预测准确性】\n")
+	writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	// 崩盘预测准确性
+	if len(histCache.States) > 0 {
+		// 简化版：检查最后一次高级分析的崩盘概率预测
+		if GlobalCache.IsValid {
+			predictedCrash := GlobalCache.LastAnalysis.BayesianAnalysis.CrashProbability.Posterior > 0.5
+			actualCrash := state.IsCrashed
+
+			writer.WriteString(fmt.Sprintf("最后预测崩盘概率: %.1f%%\n", GlobalCache.LastAnalysis.BayesianAnalysis.CrashProbability.Posterior*100))
+			writer.WriteString(fmt.Sprintf("实际结果: %s\n", map[bool]string{true: "崩盘", false: "未崩盘"}[actualCrash]))
+
+			if predictedCrash == actualCrash {
+				writer.WriteString("✅ 崩盘预测命中！\n")
+			} else {
+				writer.WriteString("❌ 崩盘预测未命中。\n")
+			}
+		} else {
+			writer.WriteString("无预测数据记录。\n")
+		}
+	}
+	writer.WriteString("\n")
+
+	// ===== 最佳离场时机对比 =====
+	writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	writer.WriteString("【离场时机对比】\n")
+	writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	if GlobalCache.IsValid && state.PlayerSoldDay > 0 {
+		suggestedDay := GlobalCache.LastAnalysis.BayesianAnalysis.BestExitDay
+		actualDay := state.PlayerSoldDay
+		timingError := actualDay - suggestedDay
+
+		writer.WriteString(fmt.Sprintf("AI建议离场日: 第 %d 天\n", suggestedDay))
+		writer.WriteString(fmt.Sprintf("实际离场日: 第 %d 天 (%s)\n", actualDay, state.PlayerSoldSession))
+		writer.WriteString(fmt.Sprintf("时机偏差: %+d 天\n", timingError))
+
+		if timingError == 0 {
+			writer.WriteString("✨ 完美离场！\n")
+		} else if timingError > 0 {
+			writer.WriteString("⚠️ 离场偏晚，可能错过最佳时机。\n")
+		} else {
+			writer.WriteString("⚠️ 离场偏早，可能放弃了部分利润。\n")
+		}
+	} else if state.PlayerShares > 0 {
+		writer.WriteString("玩家未离场，全程持仓到底。\n")
+	} else {
+		writer.WriteString("无离场记录。\n")
+	}
+	writer.WriteString("\n")
+
+	// ===== 操作日志摘要 =====
+	writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	writer.WriteString("【操作日志摘要】\n")
+	writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	buyCount := 0
+	sellCount := 0
+	for _, entry := range state.Chronicle {
+		if entry.PlayerAction == "买入" {
+			buyCount++
+		} else if entry.PlayerAction == "卖出" {
+			sellCount++
+		}
+	}
+
+	writer.WriteString(fmt.Sprintf("总操作次数: %d 次\n", len(state.Chronicle)))
+	writer.WriteString(fmt.Sprintf("买入次数: %d 次\n", buyCount))
+	writer.WriteString(fmt.Sprintf("卖出次数: %d 次\n", sellCount))
+	writer.WriteString("\n")
+
+	// ===== 历史价格走势 =====
+	if len(histCache.States) > 0 {
+		writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		writer.WriteString("【历史价格走势】(最近20个时段，从新到旧)\n")
+		writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		writer.WriteString(fmt.Sprintf("%-6s %-10s %-10s %-15s\n", "Day", "Session", "Price", "Player Action"))
+		writer.WriteString("─────────────────────────────────────────────────\n")
+		// 从最新到最旧显示（倒序遍历）
+		for i := len(histCache.States) - 1; i >= 0; i-- {
+			snap := histCache.States[i]
+			writer.WriteString(fmt.Sprintf("%-6d %-10s $%-9.2f %-15s\n",
+				snap.Day, snap.Session, snap.Price, snap.PlayerAction))
+		}
+		writer.WriteString("\n")
+	}
+
+	// ===== 结语 =====
+	writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	writer.WriteString("【复盘总结】\n")
+	writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	writer.WriteString("\n市场是一个零和博弈的修罗场。\n")
+	writer.WriteString("每一次交易决策都是对市场理解的检验。\n")
+	writer.WriteString("反身性理论告诉我们：认知影响现实，现实反过来影响认知。\n")
+	writer.WriteString("贝叶斯概率提醒我们：用证据更新信念，在不确定性中寻找确定性。\n\n")
+	writer.WriteString("继续磨练，在实战中成长。\n\n")
+	writer.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	writer.WriteString("报告结束\n")
+
+	writer.Flush()
+
+	fmt.Printf(Green+"\n📊 复盘报告已生成: %s"+Reset+"\n", filename)
+}
+
+func renderGameOver(state *GameState, reader *bufio.Reader) {
 	fmt.Println("\n" + Yellow + "==================== 终局审判 ====================" + Reset)
 	fmt.Printf(Cyan+"主题模式: %s\n"+Reset, CurrentTheme.Name)
 
@@ -4127,7 +6052,6 @@ func renderGameOver(state *GameState) {
 		fmt.Println(" [2] 结束并返回主界面")
 		fmt.Print(Green + "\n请输入编号: " + Reset)
 
-		reader := bufio.NewReader(os.Stdin)
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
 
