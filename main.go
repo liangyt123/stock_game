@@ -13,12 +13,12 @@ import (
 
 const (
 	Reset  = "\033[0m"
-	Red    = "\033[31m"  
-	Green  = "\033[32m"  
-	Yellow = "\033[33m"  
-	Blue   = "\033[34m"  
-	Purple = "\033[35m"  
-	Cyan   = "\033[36m"  
+	Red    = "\033[31m"
+	Green  = "\033[32m"
+	Yellow = "\033[33m"
+	Blue   = "\033[34m"
+	Purple = "\033[35m"
+	Cyan   = "\033[36m"
 )
 
 // 事件情绪分类（用于马尔科夫链）
@@ -231,28 +231,28 @@ func selectNextEventByMarkov(currentEvent Event, eventPool []Event) Event {
 
 // 战绩记录系统
 type GameRecord struct {
-	Timestamp     string  `json:"timestamp"`      // 游戏时间
-	Theme         string  `json:"theme"`          // 主题模式
-	FinalProfit   float64 `json:"final_profit"`   // 最终收益率
-	Grade         string  `json:"grade"`          // 评级
-	Score         int     `json:"score"`          // 总分
-	IsCrashed     bool    `json:"is_crashed"`     // 是否崩盘
-	PlayerSold    bool    `json:"player_sold"`    // 玩家是否卖出
-	SoldDay       int     `json:"sold_day"`       // 卖出日期(如果卖出)
-	SoldSession   string  `json:"sold_session"`   // 卖出时段(如果卖出)
-	ProfitScore   int     `json:"profit_score"`   // 收益分
-	TimingScore   int     `json:"timing_score"`   // 时机分
-	RiskScore     int     `json:"risk_score"`     // 风控分
+	Timestamp   string  `json:"timestamp"`    // 游戏时间
+	Theme       string  `json:"theme"`        // 主题模式
+	FinalProfit float64 `json:"final_profit"` // 最终收益率
+	Grade       string  `json:"grade"`        // 评级
+	Score       int     `json:"score"`        // 总分
+	IsCrashed   bool    `json:"is_crashed"`   // 是否崩盘
+	PlayerSold  bool    `json:"player_sold"`  // 玩家是否卖出
+	SoldDay     int     `json:"sold_day"`     // 卖出日期(如果卖出)
+	SoldSession string  `json:"sold_session"` // 卖出时段(如果卖出)
+	ProfitScore int     `json:"profit_score"` // 收益分
+	TimingScore int     `json:"timing_score"` // 时机分
+	RiskScore   int     `json:"risk_score"`   // 风控分
 }
 
 type TradePoint struct {
 	Day           int
 	Session       string
-	Action        string    // "Buy" / "Sell"
+	Action        string // "Buy" / "Sell"
 	Price         float64
 	Shares        int
-	WhaleStatus   string    // 当时游资的状态 (如 "出货", "洗盘", "Spoofing")
-	MarketContext string    // 当时大盘的状态 (如 "妖股狂热", "高位震荡")
+	WhaleStatus   string // 当时游资的状态 (如 "出货", "洗盘", "Spoofing")
+	MarketContext string // 当时大盘的状态 (如 "妖股狂热", "高位震荡")
 }
 
 type RecordHistory struct {
@@ -262,25 +262,25 @@ type RecordHistory struct {
 const recordFilePath = "game_records.json"
 
 type AI struct {
-	ID              string
-	Type            string  // "Whale", "Quant", "Retail", "Institution"
-	SubType         string  // "刺客", "打板", "新韭", "老散", "国家队"
-	Name            string
-	Shares          int
-	Cost            float64
-	Cash            float64 // 新增：可用于买入的现金
-	TargetProfit    float64
-	FearBasis       float64
-	HasSold         bool
-	LastOpinion     string
-	HasInsiderInfo  bool    // 是否有内幕消息（提前知道下一个事件）
-	
+	ID             string
+	Type           string // "Whale", "Quant", "Retail", "Institution"
+	SubType        string // "刺客", "打板", "新韭", "老散", "国家队"
+	Name           string
+	Shares         int
+	Cost           float64
+	Cash           float64 // 新增：可用于买入的现金
+	TargetProfit   float64
+	FearBasis      float64
+	HasSold        bool
+	LastOpinion    string
+	HasInsiderInfo bool // 是否有内幕消息（提前知道下一个事件）
+
 	// 当前回合的订单
-	OrderType       string  // "Buy", "Sell", ""
-	OrderShares     int     // 计划卖出几股 / 计划买入几股 (买入时根据Cash算)
-	OrderCash       float64 // 计划投入多少钱买
-	MarginDebt      float64 // 新增：游资自身场外配资
-	StatusFlag      string  // 新增：记录当前行为状态 "Spoofing", "ForcedLiquidation", "GridTrading" 等
+	OrderType   string  // "Buy", "Sell", ""
+	OrderShares int     // 计划卖出几股 / 计划买入几股 (买入时根据Cash算)
+	OrderCash   float64 // 计划投入多少钱买
+	MarginDebt  float64 // 新增：游资自身场外配资
+	StatusFlag  string  // 新增：记录当前行为状态 "Spoofing", "ForcedLiquidation", "GridTrading" 等
 }
 
 // 自动交易策略
@@ -293,13 +293,13 @@ type AutoStrategy struct {
 }
 
 type GameState struct {
-	Day                  int
-	Session              string // "早盘" 或 "尾盘"
-	MaxDays              int
-	GameMode             string  // "fixed" 固定回合 或 "auto" 自动结束
-	Price                float64
-	LastPrice            float64
-	PlayerShares         int
+	Day                   int
+	Session               string // "早盘" 或 "尾盘"
+	MaxDays               int
+	GameMode              string // "fixed" 固定回合 或 "auto" 自动结束
+	Price                 float64
+	LastPrice             float64
+	PlayerShares          int
 	PlayerAvailableShares int     // 可用筹码 (T+1机制)
 	PlayerFrozenShares    int     // 冻结筹码（今天新买入的，明天可用）
 	PlayerCash            float64 // 当前现金
@@ -310,42 +310,42 @@ type GameState struct {
 	PlayerSoldDay         int
 	PlayerSoldSession     string
 	PriceHistory          []float64 // 价格历史，用于绘制走势图
-	IsGameOver           bool
-	IsCrashed            bool
-	CurrentEvent         Event
-	NextEvent            Event    // 下一个事件（信息不对称）
-	AIs                  []*AI
-	TotalActiveShare     int
-	CrashWarningLevel    int // 崩盘预警等级 0=正常, 1=预警, 2=危险, 3=高危, 4=极限
-	ConsecutiveFallDays  int // 连续下跌天数
-	TotalEscapedAIShares int // 已逃跑的AI持股总数
-	TradeHistory         []string // 交易历史记录
-	AutoTradeStrategy    *AutoStrategy // 自动交易策略（nil表示手动）
-	TotalMarketShares    int     // 流通盘总股数 (如 100,000)
-    ConsecutiveGrowthDays int    // 新增：连涨天数用于触发妖股模型
-    IsMonsterStock        bool   // 新增：妖股狂热状态
-	
-	// 博弈数据（零和撮合）
-	TotalBuyDemandCash   float64 // 本回合全场涌入的总买单金额 
-	TotalBuyDemandShares int     // 本回合全场需求多少股 (预估)
-	TotalSellSupplyShares int    // 本回合全场砸出多少股
-	FakeSellPressure      int    // 新增：游资假抛单
-	FakeBuyPressure       int    // 新增：托单
+	IsGameOver            bool
+	IsCrashed             bool
+	CurrentEvent          Event
+	NextEvent             Event // 下一个事件（信息不对称）
+	AIs                   []*AI
+	TotalActiveShare      int
+	CrashWarningLevel     int           // 崩盘预警等级 0=正常, 1=预警, 2=危险, 3=高危, 4=极限
+	ConsecutiveFallDays   int           // 连续下跌天数
+	TotalEscapedAIShares  int           // 已逃跑的AI持股总数
+	TradeHistory          []string      // 交易历史记录
+	AutoTradeStrategy     *AutoStrategy // 自动交易策略（nil表示手动）
+	TotalMarketShares     int           // 流通盘总股数 (如 100,000)
+	ConsecutiveGrowthDays int           // 新增：连涨天数用于触发妖股模型
+	IsMonsterStock        bool          // 新增：妖股狂热状态
 
-	BuyPressure          int     // 显示用的买压（原逻辑兼容）
-	SellPressure         int     // 显示用的卖压（原逻辑兼容）
-	WhaleBuying          int     
-	WhaleSelling         int     
-	RetailBuying         int     
-	RetailSelling        int     
-	LastActionMessage    string  // 上一回合操作反馈（显示在仪表盘中）
-	
+	// 博弈数据（零和撮合）
+	TotalBuyDemandCash    float64 // 本回合全场涌入的总买单金额
+	TotalBuyDemandShares  int     // 本回合全场需求多少股 (预估)
+	TotalSellSupplyShares int     // 本回合全场砸出多少股
+	FakeSellPressure      int     // 新增：游资假抛单
+	FakeBuyPressure       int     // 新增：托单
+
+	BuyPressure       int // 显示用的买压（原逻辑兼容）
+	SellPressure      int // 显示用的卖压（原逻辑兼容）
+	WhaleBuying       int
+	WhaleSelling      int
+	RetailBuying      int
+	RetailSelling     int
+	LastActionMessage string // 上一回合操作反馈（显示在仪表盘中）
+
 	// 玩家在输入控制台提交的暂存订单
-	PlayerOrderType      string  // "Buy", "Sell", ""
-	PlayerOrderShares    int
-	PlayerOrderCash      float64
-	
-	TradePoints          []TradePoint // 上帝视角复盘记录点
+	PlayerOrderType   string // "Buy", "Sell", ""
+	PlayerOrderShares int
+	PlayerOrderCash   float64
+
+	TradePoints []TradePoint // 上帝视角复盘记录点
 }
 
 // 加载历史战绩
@@ -403,8 +403,8 @@ func showRecordHistory(reader *bufio.Reader) {
 	sGrades := 0
 	aGrades := 0
 	avgProfit := 0.0
-	crashedEscaped := 0  // 崩盘时成功逃顶的次数
-	totalCrashed := 0    // 崩盘总次数
+	crashedEscaped := 0 // 崩盘时成功逃顶的次数
+	totalCrashed := 0   // 崩盘总次数
 
 	for _, record := range history.Records {
 		if record.Grade == "S" {
@@ -668,8 +668,8 @@ func main() {
 			state.PlayerOrderType = ""
 			state.PlayerOrderShares = 0
 			state.PlayerOrderCash = 0
-			
-			fmt.Printf("\n" + Purple + "  🕰️ 【%s时段】你正在上班无法看盘，机构与量化正在暗流涌动火拼中..." + Reset + "\n", state.Session)
+
+			fmt.Printf("\n"+Purple+"  🕰️ 【%s时段】你正在上班无法看盘，机构与量化正在暗流涌动火拼中..."+Reset+"\n", state.Session)
 			time.Sleep(1500 * time.Millisecond)
 			processTurn(state)
 			continue
@@ -689,7 +689,7 @@ func main() {
 			} else if state.PlayerFrozenShares > 0 {
 				fmt.Printf(Red + "[无法卖出] 筹码已被T+1冻结！" + Reset + "    ")
 			}
-			
+
 			canBuyShares := int(state.PlayerCash / state.Price)
 			if canBuyShares > 0 {
 				fmt.Printf("\n [5] 建仓1/3    [6] 半仓买入    [7] 满仓梭哈    ")
@@ -713,13 +713,21 @@ func main() {
 			case "2", "3", "4":
 				if state.PlayerAvailableShares > 0 {
 					var sellShares int
-					if input == "2" { sellShares = state.PlayerAvailableShares / 3 } else if input == "3" { sellShares = state.PlayerAvailableShares / 2 } else { sellShares = state.PlayerAvailableShares }
-					if sellShares == 0 { sellShares = state.PlayerAvailableShares }
+					if input == "2" {
+						sellShares = state.PlayerAvailableShares / 3
+					} else if input == "3" {
+						sellShares = state.PlayerAvailableShares / 2
+					} else {
+						sellShares = state.PlayerAvailableShares
+					}
+					if sellShares == 0 {
+						sellShares = state.PlayerAvailableShares
+					}
 					state.PlayerOrderType = "Sell"
 					state.PlayerOrderShares = sellShares
 					state.LastActionMessage = fmt.Sprintf("📝 挂单：全服限价卖出 %d 股 (等待盘后撮合...)", sellShares)
 					// 预扣除，防止重复下单
-					state.PlayerAvailableShares -= sellShares 
+					state.PlayerAvailableShares -= sellShares
 				} else {
 					state.LastActionMessage = "❌ 无可用筹码（T+1冻结中）"
 					state.PlayerOrderType = ""
@@ -728,8 +736,16 @@ func main() {
 				canBuyShares := int(state.PlayerCash / state.Price)
 				if canBuyShares > 0 {
 					var buyShares int
-					if input == "5" { buyShares = canBuyShares / 3 } else if input == "6" { buyShares = canBuyShares / 2 } else { buyShares = canBuyShares }
-					if buyShares == 0 { buyShares = canBuyShares }
+					if input == "5" {
+						buyShares = canBuyShares / 3
+					} else if input == "6" {
+						buyShares = canBuyShares / 2
+					} else {
+						buyShares = canBuyShares
+					}
+					if buyShares == 0 {
+						buyShares = canBuyShares
+					}
 					buyAmount := float64(buyShares) * state.Price
 					state.PlayerOrderType = "Buy"
 					state.PlayerOrderCash = buyAmount
@@ -784,27 +800,27 @@ func initGame(gameMode string, maxDays int, autoStrategy *AutoStrategy) *GameSta
 	}
 
 	state := &GameState{
-		Day:               1,
-		Session:           "早盘",
-		MaxDays:           maxDays,
-		GameMode:          gameMode,
-		Price:             initialPrice,
-		LastPrice:         initialPrice,
-		PlayerShares:      initialShares,
+		Day:                   1,
+		Session:               "早盘",
+		MaxDays:               maxDays,
+		GameMode:              gameMode,
+		Price:                 initialPrice,
+		LastPrice:             initialPrice,
+		PlayerShares:          initialShares,
 		PlayerAvailableShares: initialShares, // 初始即可全卖
 		PlayerFrozenShares:    0,
-		PlayerCash:        0.0, // 初始全仓股票，无现金
-		PlayerAvgCost:     initialPrice,
-		MarginDebt:        0.0, // 无融资负债
-		IsMarginCalled:    false,
-		InitialAsset:      float64(initialShares) * initialPrice, // 记录初始总资产
-		AIs:               make([]*AI, 0),
-		CurrentEvent:      startEvent,
-		NextEvent:         selectNextEventByMarkov(startEvent, Events), // 使用马尔科夫链预生成下一个事件
-		TradeHistory:      []string{},
-		PriceHistory:      []float64{initialPrice}, // 初始化一条K线基础记录
-		AutoTradeStrategy: autoStrategy,
-		TotalMarketShares: 100000, // 全服只有 10 万股，零和博弈
+		PlayerCash:            0.0, // 初始全仓股票，无现金
+		PlayerAvgCost:         initialPrice,
+		MarginDebt:            0.0, // 无融资负债
+		IsMarginCalled:        false,
+		InitialAsset:          float64(initialShares) * initialPrice, // 记录初始总资产
+		AIs:                   make([]*AI, 0),
+		CurrentEvent:          startEvent,
+		NextEvent:             selectNextEventByMarkov(startEvent, Events), // 使用马尔科夫链预生成下一个事件
+		TradeHistory:          []string{},
+		PriceHistory:          []float64{initialPrice}, // 初始化一条K线基础记录
+		AutoTradeStrategy:     autoStrategy,
+		TotalMarketShares:     100000, // 全服只有 10 万股，零和博弈
 		// 博弈数据初始化
 		TotalBuyDemandCash:    0,
 		TotalBuyDemandShares:  0,
@@ -820,18 +836,18 @@ func initGame(gameMode string, maxDays int, autoStrategy *AutoStrategy) *GameSta
 	// 真正的零和市场生态 (Total = 100,000 股)
 	// Player = 4000 股
 	// createAIsAdvanced 参数：类型, 子类型, 名称, 数量, 单个持股, 备用资金, 成本, 目标倍数, 恐慌系数
-	
+
 	// Whale (总 27000 股)
 	createAIsAdvanced(state, "Whale", "刺客", "江浙刺客游资", 1, 15000, 600000.0, 9.5, 1.4, 0.6)
 	createAIsAdvanced(state, "Whale", "机构", "内资长线底仓", 1, 12000, 1200000.0, 8.5, 2.0, 0.1) // 极度铁头
-	
+
 	// Quant (总 26000 股)
 	createAIsAdvanced(state, "Quant", "打板", "高频打板量化", 1, 14000, 300000.0, 10.1, 1.2, 1.5)
 	createAIsAdvanced(state, "Quant", "网格", "幻方网格量化", 1, 12000, 350000.0, 10.0, 1.15, 1.7)
-	
+
 	// Retail (总 43000 股)
-	createAIsAdvanced(state, "Retail", "新韭", "发财梦新韭菜", 2,  8000,  80000.0, 10.8, 1.15, 2.8) 
-	createAIsAdvanced(state, "Retail", "老散", "装死死扛老散", 3,  9000,  15000.0, 13.0, 1.05, 0.2) // 强迫症装死
+	createAIsAdvanced(state, "Retail", "新韭", "发财梦新韭菜", 2, 8000, 80000.0, 10.8, 1.15, 2.8)
+	createAIsAdvanced(state, "Retail", "老散", "装死死扛老散", 3, 9000, 15000.0, 13.0, 1.05, 0.2) // 强迫症装死
 
 	// 隐藏国家队 (0 股，500万备用金准备托底)
 	createAIsAdvanced(state, "Institution", "国家队", "平准托底基金", 1, 0, 5000000.0, 10.0, 1.05, 0.0)
@@ -924,7 +940,9 @@ func createAIsAdvanced(state *GameState, aiType string, subType string, namePref
 		costMut := baseCost * (0.97 + rand.Float64()*0.06) // 成本有±3%的波动
 
 		name := namePrefix
-		if count > 1 { name = fmt.Sprintf("%s-%d", namePrefix, i+1) }
+		if count > 1 {
+			name = fmt.Sprintf("%s-%d", namePrefix, i+1)
+		}
 
 		state.AIs = append(state.AIs, &AI{
 			ID:           fmt.Sprintf("%s-%d", aiType, len(state.AIs)),
@@ -1098,8 +1116,8 @@ func generateStrategyAdvice(state *GameState) StrategyAdvice {
 
 	// 决策逻辑
 	reasons := []string{}
-	sellScore := 0  // 卖出倾向分数
-	holdScore := 0  // 持有倾向分数
+	sellScore := 0 // 卖出倾向分数
+	holdScore := 0 // 持有倾向分数
 
 	// 分析1: 盈利情况
 	if profitRatio > 0.25 {
@@ -1202,13 +1220,13 @@ func generateStrategyAdvice(state *GameState) StrategyAdvice {
 
 // 排名评级系统
 type PlayerRank struct {
-	Grade       string  // S, A, B, C, D, F
-	Title       string  // 称号
-	Score       int     // 总分
-	ProfitScore int     // 收益分
-	TimingScore int     // 时机分
-	RiskScore   int     // 风控分
-	Comment     string  // 评语
+	Grade       string // S, A, B, C, D, F
+	Title       string // 称号
+	Score       int    // 总分
+	ProfitScore int    // 收益分
+	TimingScore int    // 时机分
+	RiskScore   int    // 风控分
+	Comment     string // 评语
 }
 
 func calculatePlayerRank(state *GameState) PlayerRank {
@@ -1243,8 +1261,8 @@ func calculatePlayerRank(state *GameState) PlayerRank {
 
 	// 2. 时机分 (0-30分) - 是否成功逃顶
 	timingScore := 0
-	hasSoldBefore := state.PlayerSoldDay > 0  // 是否卖出过
-	isHoldingAtEnd := state.PlayerShares > 0   // 最终是否持仓
+	hasSoldBefore := state.PlayerSoldDay > 0 // 是否卖出过
+	isHoldingAtEnd := state.PlayerShares > 0 // 最终是否持仓
 
 	if state.IsCrashed {
 		// 崩盘时
@@ -1385,7 +1403,7 @@ func calculateDynamicLiquidity(state *GameState) float64 {
 	totalShares += state.PlayerShares
 
 	if totalShares > 0 {
-		escapedRatio := float64(state.TotalEscapedAIShares) / float64(totalShares + state.TotalEscapedAIShares)
+		escapedRatio := float64(state.TotalEscapedAIShares) / float64(totalShares+state.TotalEscapedAIShares)
 		if escapedRatio > 0.15 {
 			baseLiquidity *= 0.7 // 逃跑>15%，流动性下降30%
 		}
@@ -1404,12 +1422,16 @@ func calculateDynamicLiquidity(state *GameState) float64 {
 
 // 辅助函数：min/max
 func min(a, b int) int {
-	if a < b { return a }
+	if a < b {
+		return a
+	}
 	return b
 }
 
 func max(a, b float64) float64 {
-	if a > b { return a }
+	if a > b {
+		return a
+	}
 	return b
 }
 
@@ -1422,7 +1444,7 @@ func processTurn(state *GameState) {
 	state.FakeBuyPressure, state.FakeSellPressure = 0, 0
 
 	priceChangePct := (state.Price - state.LastPrice) / state.LastPrice
-	
+
 	// 妖股逻辑更新：连涨3天判定为妖股
 	if priceChangePct > 0.05 {
 		state.ConsecutiveGrowthDays++
@@ -1452,7 +1474,9 @@ func processTurn(state *GameState) {
 		ai.StatusFlag = ""
 
 		profitRatio := 0.0
-		if ai.Cost > 0 { profitRatio = state.Price / ai.Cost }
+		if ai.Cost > 0 {
+			profitRatio = state.Price / ai.Cost
+		}
 		eventFear := state.CurrentEvent.FearModifier
 
 		// === 特殊机制：庄家配资爆仓 ===
@@ -1462,7 +1486,7 @@ func processTurn(state *GameState) {
 				ai.StatusFlag = "ForcedLiquidation"
 				ai.OrderType = "Sell"
 				ai.OrderShares = ai.Shares
-				ai.Cash = 0 
+				ai.Cash = 0
 				continue
 			}
 		}
@@ -1481,8 +1505,8 @@ func processTurn(state *GameState) {
 		activeFearBasis := ai.FearBasis
 		activeTargetProfit := ai.TargetProfit
 		if state.IsMonsterStock && (ai.SubType == "新韭" || ai.SubType == "打板") {
-			activeFearBasis = 0.0 
-			activeTargetProfit = 100.0 
+			activeFearBasis = 0.0
+			activeTargetProfit = 100.0
 		}
 
 		if ai.Shares == 0 {
@@ -1494,10 +1518,12 @@ func processTurn(state *GameState) {
 					if state.NextEvent.Sentiment > 1.3 && rand.Float64() < 0.80 {
 						reenter = true
 					} else if state.Price < ai.Cost*0.60 && rand.Float64() < 0.80 {
-						reenter = true 
+						reenter = true
 					}
 				} else { // 机构长线
-					if state.Price < ai.Cost*0.50 { reenter = true }
+					if state.Price < ai.Cost*0.50 {
+						reenter = true
+					}
 				}
 			case "Quant":
 				if ai.SubType == "网格" {
@@ -1517,12 +1543,12 @@ func processTurn(state *GameState) {
 				}
 			default: // Retail
 				if (state.CurrentEvent.Sentiment > 1.1 || priceChangePct > 0.08) && rand.Float64() < 0.50 {
-					reenter = true 
+					reenter = true
 				} else if state.Price < ai.Cost*0.50 && rand.Float64() < 0.05 {
-					reenter = true 
+					reenter = true
 				}
 				if state.IsMonsterStock && ai.SubType == "新韭" {
-					reenter = true 
+					reenter = true
 				}
 			}
 
@@ -1531,7 +1557,7 @@ func processTurn(state *GameState) {
 				ai.OrderCash = ai.Cash * investRatio
 				if ai.Type == "Whale" && state.Session == "早盘" && rand.Float64() < 0.3 {
 					ai.StatusFlag = "Spoofing"
-					state.FakeSellPressure += int(ai.OrderCash / state.Price) * 3 
+					state.FakeSellPressure += int(ai.OrderCash/state.Price) * 3
 				}
 			}
 		} else {
@@ -1540,49 +1566,66 @@ func processTurn(state *GameState) {
 			if ai.Type == "Whale" {
 				if ai.SubType == "刺客" {
 					if profitRatio > activeTargetProfit {
-						shouldSell = true; sellRatio = 1.0 
+						shouldSell = true
+						sellRatio = 1.0
 					} else if profitRatio > 1.1 && rand.Float64() < 0.3 {
-						shouldSell = true; sellRatio = 0.4 ; ai.StatusFlag = "Shakeout"
+						shouldSell = true
+						sellRatio = 0.4
+						ai.StatusFlag = "Shakeout"
 					} else if eventFear > 2.0 {
-						shouldSell = true; sellRatio = 1.0 
+						shouldSell = true
+						sellRatio = 1.0
 					}
 				} else { // 机构长线
 					if profitRatio > activeTargetProfit {
-						shouldSell = true; sellRatio = 0.5 
+						shouldSell = true
+						sellRatio = 0.5
 					}
 				}
 			} else if ai.Type == "Quant" {
 				if ai.SubType == "网格" {
 					if profitRatio > 1.03 {
-						shouldSell = true; sellRatio = 0.5; ai.StatusFlag = "GridTrading"
+						shouldSell = true
+						sellRatio = 0.5
+						ai.StatusFlag = "GridTrading"
 					} else if profitRatio < 0.97 && ai.Cash > 1000 {
-						shouldSell = false; ai.OrderType = "Buy"; ai.OrderCash = ai.Cash * 0.5; ai.StatusFlag = "GridTrading"
+						shouldSell = false
+						ai.OrderType = "Buy"
+						ai.OrderCash = ai.Cash * 0.5
+						ai.StatusFlag = "GridTrading"
 					}
-				} else { 
+				} else {
 					if profitRatio > activeTargetProfit || rand.Float64() < 0.05 {
-						shouldSell = true; sellRatio = 1.0
+						shouldSell = true
+						sellRatio = 1.0
 					}
 				}
 			} else { // Retail
 				panicProb := activeFearBasis * eventFear * 0.05
 				if ai.SubType == "新韭" {
 					if profitRatio > activeTargetProfit && rand.Float64() < 0.6 {
-						shouldSell = true; sellRatio = 0.5
+						shouldSell = true
+						sellRatio = 0.5
 					} else if profitRatio < 0.95 && priceChangePct < -0.05 && rand.Float64() < 0.7 {
-						shouldSell = true; sellRatio = 1.0 
+						shouldSell = true
+						sellRatio = 1.0
 					} else if rand.Float64() < panicProb {
-						shouldSell = true; sellRatio = 1.0 
+						shouldSell = true
+						sellRatio = 1.0
 					}
 				} else { // 老散
 					if profitRatio > activeTargetProfit && rand.Float64() < 0.8 {
-						shouldSell = true; sellRatio = 1.0 
+						shouldSell = true
+						sellRatio = 1.0
 					}
 				}
 			}
 			if shouldSell {
 				ai.OrderType = "Sell"
 				ai.OrderShares = int(float64(ai.Shares) * sellRatio)
-				if ai.OrderShares == 0 { ai.OrderShares = ai.Shares }
+				if ai.OrderShares == 0 {
+					ai.OrderShares = ai.Shares
+				}
 			}
 		}
 	}
@@ -1591,14 +1634,18 @@ func processTurn(state *GameState) {
 	totalSellShares := state.PlayerOrderShares
 	totalBuyCash := state.PlayerOrderCash
 	for _, ai := range state.AIs {
-		if ai.OrderType == "Sell" { totalSellShares += ai.OrderShares }
-		if ai.OrderType == "Buy" { totalBuyCash += ai.OrderCash }
+		if ai.OrderType == "Sell" {
+			totalSellShares += ai.OrderShares
+		}
+		if ai.OrderType == "Buy" {
+			totalBuyCash += ai.OrderCash
+		}
 	}
 	state.TotalBuyDemandCash = totalBuyCash
 	state.TotalSellSupplyShares = totalSellShares
 	totalBuyDemandShares := int(totalBuyCash / state.Price)
 	state.TotalBuyDemandShares = totalBuyDemandShares
-	
+
 	if totalBuyDemandShares == 0 && totalSellShares == 0 {
 		state.Price = state.Price * (1.0 + (rand.Float64()*0.01 - 0.005))
 		advanceTime(state)
@@ -1609,14 +1656,28 @@ func processTurn(state *GameState) {
 	demandRatio := 1.0
 	if totalSellShares > 0 {
 		demandRatio = float64(totalBuyDemandShares) / float64(totalSellShares)
-	} else { demandRatio = 5.0 }
+	} else {
+		demandRatio = 5.0
+	}
 
 	priceModifier := 0.0
-	if demandRatio > 2.0 { priceModifier = 0.10 } else if demandRatio > 1.2 { priceModifier = 0.05 } else if demandRatio > 0.8 { priceModifier = (rand.Float64()*0.04 - 0.02) } else if demandRatio > 0.5 { priceModifier = -0.05 } else { priceModifier = -0.10 }
-	
+	if demandRatio > 2.0 {
+		priceModifier = 0.10
+	} else if demandRatio > 1.2 {
+		priceModifier = 0.05
+	} else if demandRatio > 0.8 {
+		priceModifier = (rand.Float64()*0.04 - 0.02)
+	} else if demandRatio > 0.5 {
+		priceModifier = -0.05
+	} else {
+		priceModifier = -0.10
+	}
+
 	state.LastPrice = state.Price
 	state.Price = state.Price * (1.0 + priceModifier)
-	if state.Price < 0.1 { state.Price = 0.1 }
+	if state.Price < 0.1 {
+		state.Price = 0.1
+	}
 
 	// 5. 撮合
 	var buyProration, sellProration float64 = 1.0, 1.0
@@ -1629,18 +1690,26 @@ func processTurn(state *GameState) {
 			buyProration = 1.0
 			sellProration = float64(realBuyExpectedShares) / float64(totalSellShares)
 		}
-	} else if realBuyExpectedShares <= 0 { sellProration = 0.0 } else if totalSellShares <= 0 { buyProration = 0.0 }
+	} else if realBuyExpectedShares <= 0 {
+		sellProration = 0.0
+	} else if totalSellShares <= 0 {
+		buyProration = 0.0
+	}
 
 	// 6. 账户清算 (Fixing the Bug here)
-    whaleStatusSnapshot := "沉静"
-    for _, ai := range state.AIs {
-        if ai.Type == "Whale" && ai.StatusFlag != "" { 
-            whaleStatusSnapshot = ai.StatusFlag 
-            break
-        }
-    }
-    marketContext := "正常"
-    if state.IsMonsterStock { marketContext = "妖股狂热" } else if state.CrashWarningLevel >= 3 { marketContext = "极端恐慌" }
+	whaleStatusSnapshot := "沉静"
+	for _, ai := range state.AIs {
+		if ai.Type == "Whale" && ai.StatusFlag != "" {
+			whaleStatusSnapshot = ai.StatusFlag
+			break
+		}
+	}
+	marketContext := "正常"
+	if state.IsMonsterStock {
+		marketContext = "妖股狂热"
+	} else if state.CrashWarningLevel >= 3 {
+		marketContext = "极端恐慌"
+	}
 
 	if state.PlayerOrderType == "Sell" {
 		actualSell := int(float64(state.PlayerOrderShares) * sellProration)
@@ -1650,9 +1719,9 @@ func processTurn(state *GameState) {
 			state.PlayerShares -= actualSell // FIXED: Deduct shares
 			state.PlayerAvailableShares += (state.PlayerOrderShares - actualSell)
 			state.LastActionMessage = fmt.Sprintf(" | 撮合成功: 卖出 %d 股", actualSell)
-            state.TradePoints = append(state.TradePoints, TradePoint{
-                Day: state.Day, Session: state.Session, Action: "Sell", Price: state.Price, Shares: actualSell, WhaleStatus: whaleStatusSnapshot, MarketContext: marketContext,
-            })
+			state.TradePoints = append(state.TradePoints, TradePoint{
+				Day: state.Day, Session: state.Session, Action: "Sell", Price: state.Price, Shares: actualSell, WhaleStatus: whaleStatusSnapshot, MarketContext: marketContext,
+			})
 		} else {
 			state.PlayerAvailableShares += state.PlayerOrderShares
 			state.LastActionMessage = "[系统退单] 撮合失败：无人接盘"
@@ -1668,9 +1737,9 @@ func processTurn(state *GameState) {
 			totalCostBefore := float64(state.PlayerShares-actualBuy) * state.PlayerAvgCost
 			state.PlayerAvgCost = (totalCostBefore + cost) / float64(state.PlayerShares)
 			state.LastActionMessage = fmt.Sprintf("[交割单] 抢到 %d 股", actualBuy)
-            state.TradePoints = append(state.TradePoints, TradePoint{
-                Day: state.Day, Session: state.Session, Action: "Buy", Price: state.Price, Shares: actualBuy, WhaleStatus: whaleStatusSnapshot, MarketContext: marketContext,
-            })
+			state.TradePoints = append(state.TradePoints, TradePoint{
+				Day: state.Day, Session: state.Session, Action: "Buy", Price: state.Price, Shares: actualBuy, WhaleStatus: whaleStatusSnapshot, MarketContext: marketContext,
+			})
 		} else {
 			state.PlayerCash += state.PlayerOrderCash
 			state.LastActionMessage = "[系统退单] 没买到"
@@ -1685,10 +1754,14 @@ func processTurn(state *GameState) {
 			actualSell := int(float64(ai.OrderShares) * sellProration)
 			ai.Shares -= actualSell
 			ai.Cash += float64(actualSell) * state.Price
-			if ai.Type == "Whale" { state.WhaleSelling += actualSell }
-			if ai.Type == "Retail" { state.RetailSelling += actualSell }
+			if ai.Type == "Whale" {
+				state.WhaleSelling += actualSell
+			}
+			if ai.Type == "Retail" {
+				state.RetailSelling += actualSell
+			}
 		} else if ai.OrderType == "Buy" {
-			actualBuy := int(float64(int(ai.OrderCash / state.Price)) * buyProration)
+			actualBuy := int(float64(int(ai.OrderCash/state.Price)) * buyProration)
 			cost := float64(actualBuy) * state.Price
 			if actualBuy > 0 {
 				oldTotal := float64(ai.Shares) * ai.Cost
@@ -1696,10 +1769,18 @@ func processTurn(state *GameState) {
 				ai.Cost = (oldTotal + cost) / float64(ai.Shares)
 				ai.Cash -= cost
 			}
-			if ai.Type == "Whale" { state.WhaleBuying += actualBuy }
-			if ai.Type == "Retail" { state.RetailBuying += actualBuy }
+			if ai.Type == "Whale" {
+				state.WhaleBuying += actualBuy
+			}
+			if ai.Type == "Retail" {
+				state.RetailBuying += actualBuy
+			}
 		}
-		if ai.Shares == 0 { ai.HasSold = true } else { ai.HasSold = false }
+		if ai.Shares == 0 {
+			ai.HasSold = true
+		} else {
+			ai.HasSold = false
+		}
 	}
 	state.BuyPressure = int(totalBuyCash / state.Price)
 	state.SellPressure = totalSellShares
@@ -1744,11 +1825,15 @@ func advanceTime(state *GameState) {
 }
 
 func min_int(a, b int) int {
-	if a < b { return a }
+	if a < b {
+		return a
+	}
 	return b
 }
 func max_int(a, b int) int {
-	if a > b { return a }
+	if a > b {
+		return a
+	}
 	return b
 }
 
@@ -1768,11 +1853,11 @@ func renderSparkline(history []float64) string {
 			max = v
 		}
 	}
-	
+
 	if max == min {
 		return strings.Repeat("▄", len(history))
 	}
-	
+
 	var sb strings.Builder
 	for _, v := range history {
 		idx := int((v - min) / (max - min) * float64(len(bars)-1))
@@ -1814,7 +1899,6 @@ func runeWidth(s string) int {
 	return w
 }
 
-
 // 渲染筹码分布图 (Cost Distribution / Volume by Price)
 func renderCostDistribution(state *GameState) {
 	type Holder struct {
@@ -1837,27 +1921,41 @@ func renderCostDistribution(state *GameState) {
 
 	minP, maxP := state.Price, state.Price
 	for _, h := range holders {
-		if h.cost < minP { minP = h.cost }
-		if h.cost > maxP { maxP = h.cost }
+		if h.cost < minP {
+			minP = h.cost
+		}
+		if h.cost > maxP {
+			maxP = h.cost
+		}
 	}
 	minP = minP * 0.95
 	maxP = maxP * 1.05
-	if maxP <= minP { maxP = minP + 1.0 }
+	if maxP <= minP {
+		maxP = minP + 1.0
+	}
 
 	numBuckets := 9
 	bucketSize := (maxP - minP) / float64(numBuckets)
 	buckets := make([]float64, numBuckets)
 	for _, h := range holders {
 		idx := int((h.cost - minP) / bucketSize)
-		if idx < 0 { idx = 0 }
-		if idx >= numBuckets { idx = numBuckets - 1 }
+		if idx < 0 {
+			idx = 0
+		}
+		if idx >= numBuckets {
+			idx = numBuckets - 1
+		}
 		buckets[idx] += float64(h.shares)
 	}
 	maxVal := 0.0
 	for _, v := range buckets {
-		if v > maxVal { maxVal = v }
+		if v > maxVal {
+			maxVal = v
+		}
 	}
-	if maxVal == 0 { return }
+	if maxVal == 0 {
+		return
+	}
 
 	barMaxWidth := 18
 	fmt.Printf("  %s筹码分布图 (持仓成本 vs 仓量)%s\n", Cyan, Reset)
@@ -1911,7 +2009,9 @@ func renderEventCard(event Event, animate bool) {
 
 	fearBar := ""
 	fearLevel := int(event.FearModifier / 3.5 * 10)
-	if fearLevel > 10 { fearLevel = 10 }
+	if fearLevel > 10 {
+		fearLevel = 10
+	}
 	fearBar = strings.Repeat("▓", fearLevel) + strings.Repeat("░", 10-fearLevel)
 
 	fmt.Printf("  %s╭──────────────────────────────────────────╮%s\n", Purple, Reset)
@@ -1926,7 +2026,9 @@ func renderEventCard(event Event, animate bool) {
 	lineWidth := 20 // rune 数
 	for len(desc) > 0 {
 		end := lineWidth
-		if end > len(desc) { end = len(desc) }
+		if end > len(desc) {
+			end = len(desc)
+		}
 		chunk := string(desc[:end])
 		desc = desc[end:]
 		fmt.Printf("  %s│%s  %-40s%s%s│%s\n", Purple, Reset, chunk, Reset, Purple, Reset)
@@ -1939,16 +2041,23 @@ func renderFrame(state *GameState) {
 
 	// ── 顶部标题栏 ──
 	sessionColor := Purple
-	if state.Session == "尾盘" { sessionColor = Blue }
+	if state.Session == "尾盘" {
+		sessionColor = Blue
+	}
 	change := ((state.Price - state.LastPrice) / state.LastPrice) * 100
 	priceColor := Red
 	arrow := "↑"
-	if change < 0 { priceColor = Green; arrow = "↓" }
+	if change < 0 {
+		priceColor = Green
+		arrow = "↓"
+	}
 
 	netAsset := float64(state.PlayerShares)*state.Price + state.PlayerCash - state.MarginDebt
 	assetProfit := ((netAsset - state.InitialAsset) / state.InitialAsset) * 100
 	profitColor := Green
-	if assetProfit < 0 { profitColor = Red }
+	if assetProfit < 0 {
+		profitColor = Red
+	}
 
 	fmt.Printf("%s╔══════════════════════════════════════════════════════════════╗%s\n", Yellow, Reset)
 	fmt.Printf("%s║%s  第 %s%2d%s 天 [%s%s%s]  │  %s$%.2f %s %s(%+.2f%%)%s  │  净资产: %s$%.0f %s(%+.1f%%)%s\n",
@@ -1973,7 +2082,9 @@ func renderFrame(state *GameState) {
 	// ── 崩盘预警 ──
 	if state.CrashWarningLevel >= 2 {
 		warnColor := Yellow
-		if state.CrashWarningLevel >= 3 { warnColor = Red }
+		if state.CrashWarningLevel >= 3 {
+			warnColor = Red
+		}
 		warningLabels := []string{"", "", "⚠️  危险", "🚨 高危", "🚨 极限黑天鹅"}
 		fmt.Printf("\n%s%s 【崩盘预警 %d/4】%s 流动性极度萎缩！随时可能踩踏！%s\n",
 			warnColor, warningLabels[state.CrashWarningLevel], state.CrashWarningLevel, warningLabels[state.CrashWarningLevel], Reset)
@@ -1989,7 +2100,9 @@ func renderFrame(state *GameState) {
 	fmt.Printf("\n%s┌────────────────────── 📊 大盘与你 ──────────────────────────┐%s\n", Cyan, Reset)
 
 	recentDays := 40
-	if len(state.PriceHistory) < recentDays { recentDays = len(state.PriceHistory) }
+	if len(state.PriceHistory) < recentDays {
+		recentDays = len(state.PriceHistory)
+	}
 	trendStr := renderSparkline(state.PriceHistory[len(state.PriceHistory)-recentDays:])
 	fmt.Printf("%s│%s  K线: [%s%s%s]\n", Cyan, Reset, Cyan, trendStr, Reset)
 
@@ -2011,18 +2124,26 @@ func renderFrame(state *GameState) {
 	// 真实现价盘口对抗
 	demandShares := state.TotalBuyDemandShares
 	supplyShares := state.TotalSellSupplyShares
-	
-	pressureStr := fmt.Sprintf("  🚀全服买盘承接: %s%d股%s   🆚   🧨全服抛压: %s%d股%s", 
+
+	pressureStr := fmt.Sprintf("  🚀全服买盘承接: %s%d股%s   🆚   🧨全服抛压: %s%d股%s",
 		Green, demandShares, Reset,
 		Red, supplyShares, Reset,
 	)
-	
+
 	fmt.Printf("%s│%s\n%s│%s%s\n", Cyan, Reset, Cyan, Reset, pressureStr)
 	fmt.Printf("%s│%s  追踪:", Cyan, Reset)
-	if state.WhaleSelling > 0 { fmt.Printf("  %s🐋砸盘%d股%s", Red, state.WhaleSelling, Reset) }
-	if state.WhaleBuying > 0 { fmt.Printf("  %s🐋抢盘%d股%s", Green, state.WhaleBuying, Reset) }
-	if state.RetailSelling > 0 { fmt.Printf("  %s🥬割肉%d股%s", Red, state.RetailSelling, Reset) }
-	if state.RetailBuying > 0 { fmt.Printf("  %s🥬追高%d股%s", Green, state.RetailBuying, Reset) }
+	if state.WhaleSelling > 0 {
+		fmt.Printf("  %s🐋砸盘%d股%s", Red, state.WhaleSelling, Reset)
+	}
+	if state.WhaleBuying > 0 {
+		fmt.Printf("  %s🐋抢盘%d股%s", Green, state.WhaleBuying, Reset)
+	}
+	if state.RetailSelling > 0 {
+		fmt.Printf("  %s🥬割肉%d股%s", Red, state.RetailSelling, Reset)
+	}
+	if state.RetailBuying > 0 {
+		fmt.Printf("  %s🥬追高%d股%s", Green, state.RetailBuying, Reset)
+	}
 	fmt.Println()
 	fmt.Printf("%s└──────────────────────────────────────────────────────────────┘%s\n", Cyan, Reset)
 
@@ -2034,9 +2155,15 @@ func renderFrame(state *GameState) {
 	if state.PlayerShares > 0 {
 		advice := generateStrategyAdvice(state)
 		actionColor := Green
-		if advice.Action == "SELL" { actionColor = Red }
+		if advice.Action == "SELL" {
+			actionColor = Red
+		}
 		riskColor := Green
-		if advice.RiskLevel == "高风险" { riskColor = Yellow } else if advice.RiskLevel == "极高风险" { riskColor = Red }
+		if advice.RiskLevel == "高风险" {
+			riskColor = Yellow
+		} else if advice.RiskLevel == "极高风险" {
+			riskColor = Red
+		}
 
 		fmt.Printf("  %s────────────────── 💡 策略助手 ──────────────────%s\n", Cyan, Reset)
 		fmt.Printf("  风险: %s%-6s%s  收益: %s%+.1f%%%s  建议: %s%s %s%s\n",
@@ -2059,19 +2186,37 @@ func renderFrame(state *GameState) {
 			aiProfit = ((state.Price - ai.Cost) / ai.Cost) * 100
 		}
 		statusStr := fmt.Sprintf("%s%+.0f%%%s", Red, aiProfit, Reset)
-		if ai.HasSold || ai.Shares == 0 { statusStr = "\033[90m空仓伺机\033[0m" }
+		if ai.HasSold || ai.Shares == 0 {
+			statusStr = "\033[90m空仓伺机\033[0m"
+		}
 
 		nameColor := Cyan
-		if ai.Type == "Whale" { nameColor = Purple } else if ai.Type == "Quant" { nameColor = Blue } else { nameColor = Green }
+		if ai.Type == "Whale" {
+			nameColor = Purple
+		} else if ai.Type == "Quant" {
+			nameColor = Blue
+		} else {
+			nameColor = Green
+		}
 
 		opinionColor := Reset
-		if ai.Shares == 0 { opinionColor = "\033[90m" }
+		if ai.Shares == 0 {
+			opinionColor = "\033[90m"
+		}
 
 		statusFlagStr := ""
-		if ai.StatusFlag == "Spoofing" { statusFlagStr = " " + Purple + "[挂假单吓人]" + Reset }
-		if ai.StatusFlag == "GridTrading" { statusFlagStr = " " + Blue + "[网格挂单]" + Reset }
-		if ai.StatusFlag == "Bailout" { statusFlagStr = " " + Red + "[砸锅卖铁救市]" + Reset }
-		if ai.StatusFlag == "ForcedLiquidation" { statusFlagStr = " " + Yellow + "[资不抵债强平!]" + Reset }
+		if ai.StatusFlag == "Spoofing" {
+			statusFlagStr = " " + Purple + "[挂假单吓人]" + Reset
+		}
+		if ai.StatusFlag == "GridTrading" {
+			statusFlagStr = " " + Blue + "[网格挂单]" + Reset
+		}
+		if ai.StatusFlag == "Bailout" {
+			statusFlagStr = " " + Red + "[砸锅卖铁救市]" + Reset
+		}
+		if ai.StatusFlag == "ForcedLiquidation" {
+			statusFlagStr = " " + Yellow + "[资不抵债强平!]" + Reset
+		}
 
 		fmt.Printf("  %s[%s] %-12s%s│ %5d股 │ %s │ %s%s%s%s\n",
 			nameColor, ai.SubType, ai.Name, Reset,
@@ -2081,22 +2226,27 @@ func renderFrame(state *GameState) {
 	fmt.Printf("%s└──────────────────────────────────────────────────────────────┘%s\n", Cyan, Reset)
 }
 
-
 // 渲染战后复盘分析
 func renderTradeRecap(state *GameState) {
-	if len(state.PriceHistory) == 0 { return }
+	if len(state.PriceHistory) == 0 {
+		return
+	}
 
 	fmt.Printf("\n" + Cyan + "📊 【上帝视角：全场博弈复盘】" + Reset + "\n")
-	
+
 	// 1. 渲染 K 线标尺
 	history := state.PriceHistory
 	bars := []rune(" ▂▃▄▅▆▇█")
 	minP, maxP := history[0], history[0]
 	for _, v := range history {
-		if v < minP { minP = v }
-		if v > maxP { maxP = v }
+		if v < minP {
+			minP = v
+		}
+		if v > maxP {
+			maxP = v
+		}
 	}
-	
+
 	fmt.Printf("  走势: ")
 	for _, v := range history {
 		idx := 0
@@ -2112,17 +2262,25 @@ func renderTradeRecap(state *GameState) {
 	for _, tp := range state.TradePoints {
 		sIdx := 0
 		switch tp.Session {
-		case "早盘": sIdx = 0
-		case "盘中上午": sIdx = 1
-		case "盘中下午": sIdx = 2
-		case "尾盘": sIdx = 3
+		case "早盘":
+			sIdx = 0
+		case "盘中上午":
+			sIdx = 1
+		case "盘中下午":
+			sIdx = 2
+		case "尾盘":
+			sIdx = 3
 		}
-		// Index logic: day 1 start is 0. 
+		// Index logic: day 1 start is 0.
 		// Day 1 Morning result is index 1.
 		idx := (tp.Day-1)*4 + sIdx + 1
 		if idx < len(history) {
 			char := ""
-			if tp.Action == "Buy" { char = Green + "B" + Reset } else { char = Red + "S" + Reset }
+			if tp.Action == "Buy" {
+				char = Green + "B" + Reset
+			} else {
+				char = Red + "S" + Reset
+			}
 			trades[idx] = char
 		}
 	}
@@ -2142,8 +2300,10 @@ func renderTradeRecap(state *GameState) {
 		fmt.Printf("\n" + Yellow + "💡 【操盘手诊断报告】" + Reset + "\n")
 		for _, tp := range state.TradePoints {
 			icon := "🟢"
-			if tp.Action == "Sell" { icon = "🔴" }
-			
+			if tp.Action == "Sell" {
+				icon = "🔴"
+			}
+
 			diag := "这一步操作策略极其稳健。"
 			if tp.Action == "Buy" {
 				if tp.WhaleStatus == "Spoofing" {
@@ -2160,15 +2320,15 @@ func renderTradeRecap(state *GameState) {
 					diag = Yellow + "散户本能：你在最黑暗的时刻选择了逃跑，却没看到国家队正在跌停板捡筹码。" + Reset
 				}
 			}
-			
-			fmt.Printf("  [%d天 %s] %s %s %d股 @$%.2f -> %s\n", 
+
+			fmt.Printf("  [%d天 %s] %s %s %d股 @$%.2f -> %s\n",
 				tp.Day, tp.Session, icon, tp.Action, tp.Shares, tp.Price, diag)
 		}
 	}
 }
 func renderGameOver(state *GameState) {
 	fmt.Println("\n" + Yellow + "==================== 终局审判 ====================" + Reset)
-	fmt.Printf(Cyan + "主题模式: %s\n" + Reset, CurrentTheme.Name)
+	fmt.Printf(Cyan+"主题模式: %s\n"+Reset, CurrentTheme.Name)
 
 	// 计算最终资产 (市值 + 现金 - 负债)
 	finalAsset := float64(state.PlayerShares)*state.Price + state.PlayerCash - state.MarginDebt
@@ -2256,18 +2416,18 @@ func renderGameOver(state *GameState) {
 
 	// 保存战绩到历史记录
 	record := GameRecord{
-		Timestamp:     time.Now().Format("2006-01-02 15:04:05"),
-		Theme:         CurrentTheme.Name,
-		FinalProfit:   finalProfit,
-		Grade:         rank.Grade,
-		Score:         rank.Score,
-		IsCrashed:     state.IsCrashed,
-		PlayerSold:    hasSoldBefore && !isHoldingAtEnd, // 卖出后未再买回
-		SoldDay:       state.PlayerSoldDay,
-		SoldSession:   state.PlayerSoldSession,
-		ProfitScore:   rank.ProfitScore,
-		TimingScore:   rank.TimingScore,
-		RiskScore:     rank.RiskScore,
+		Timestamp:   time.Now().Format("2006-01-02 15:04:05"),
+		Theme:       CurrentTheme.Name,
+		FinalProfit: finalProfit,
+		Grade:       rank.Grade,
+		Score:       rank.Score,
+		IsCrashed:   state.IsCrashed,
+		PlayerSold:  hasSoldBefore && !isHoldingAtEnd, // 卖出后未再买回
+		SoldDay:     state.PlayerSoldDay,
+		SoldSession: state.PlayerSoldSession,
+		ProfitScore: rank.ProfitScore,
+		TimingScore: rank.TimingScore,
+		RiskScore:   rank.RiskScore,
 	}
 
 	err := saveGameRecord(record)
