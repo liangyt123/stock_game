@@ -32,6 +32,7 @@ type InteractiveMenu struct {
 	ShowNumbers bool          // 是否显示序号
 	UseArrows   bool          // 是否使用箭头指示（true=箭头，false=高亮）
 	Reader      *bufio.Reader // 输入读取器（可选，如果不提供则直接读取os.Stdin）
+	LastHeight  int           // 上次渲染的行数 (用于 Windows 下平滑刷新)
 }
 
 // NewInteractiveMenu 创建新菜单
@@ -52,8 +53,8 @@ func (m *InteractiveMenu) Show() (string, int) {
 	fmt.Print("\033[?25l")
 	defer fmt.Print("\033[?25h") // 恢复光标
 
-	// 2. 在当前行保存光标位置，作为菜单绘制的基准点
-	fmt.Print("\033[s")
+	// 2. 初始高度设为0
+	m.LastHeight = 0
 
 	// 保存当前终端状态
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
@@ -109,16 +110,22 @@ func (m *InteractiveMenu) Show() (string, int) {
 // render 渲染菜单
 func (m *InteractiveMenu) render() {
 	var b strings.Builder
+	currentLines := 0
 
-	// u: 恢复光标到基准点 (Show 开始时保存的位置)
-	// J: 清除该位置之后的所有内容，实现菜单在日志下方的原地刷新
-	b.WriteString("\033[u\033[J")
+	// 1. 如果之前渲染过，先将光标向上移动到菜单起始位置
+	if m.LastHeight > 0 {
+		b.WriteString(fmt.Sprintf("\033[%dA", m.LastHeight))
+	}
+	// 2. 清除光标之后的所有行
+	b.WriteString("\033[J")
 	b.WriteString("\r\n")
 
 	if m.Title != "" {
 		b.WriteString(fmt.Sprintf("%s%s%s\r\n", Cyan+Bold, m.Title, Reset))
 		b.WriteString(fmt.Sprintf("%s%s%s\r\n\r\n", Cyan, strings.Repeat("─", displayWidth(m.Title)), Reset))
+		currentLines += 3
 	}
+	currentLines++ // 对应 \033[J 后面的 \r\n
 
 	maxWidth := 0
 	for _, item := range m.Items {
@@ -133,6 +140,9 @@ func (m *InteractiveMenu) render() {
 	maxWidth += 4
 
 	for i, item := range m.Items {
+		// 在打印每一行之前，先强制清除该行的旧内容 (\033[2K) 并确保光标在行首 (\r)
+		b.WriteString("\033[2K\r")
+
 		prefix := "  "
 		if m.Selected == i {
 			if m.UseArrows {
@@ -171,10 +181,14 @@ func (m *InteractiveMenu) render() {
 		}
 
 		b.WriteString(prefix + number + icon + label + padding + desc + "\r\n")
+		currentLines++
 	}
 
 	b.WriteString("\r\n" + DarkGray + "↑↓ 选择  |  数字快选  |  Enter 确认  |  ESC 退出" + Reset)
+	currentLines++ // 页脚前的空行已经在最后一个 item 的 \r\n 中了，这里只算页脚文本这一行
 
+	// LastHeight 代表我们要向上回退的次数。从第 N 行回到第 1 行需要移动 N-1 次。
+	m.LastHeight = currentLines
 	fmt.Print(b.String())
 	os.Stdout.Sync()
 }
@@ -203,8 +217,8 @@ func (m *InteractiveMenu) readKey() string {
 		return ""
 	}
 
-	// Enter
-	if (n == 1 && (buf[0] == 10 || buf[0] == 13)) || (n == 2 && buf[0] == 13 && buf[1] == 10) {
+	// Enter (适配 Windows 连按或长按产生多字节的情况)
+	if n > 0 && (buf[0] == 10 || buf[0] == 13) {
 		return "enter"
 	}
 
@@ -246,7 +260,7 @@ func (m *InteractiveMenu) fallbackToNumberInput() (string, int) {
 	if m.Reader != nil {
 		input, _ = m.Reader.ReadString('\n')
 	} else {
-		fmt.Scanln(&input)
+		input, _ = bufio.NewReader(os.Stdin).ReadString('\n')
 	}
 	input = strings.TrimSpace(input)
 	for i, item := range m.Items {

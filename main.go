@@ -1597,12 +1597,28 @@ func detailLevelDesc(level string) string {
 
 // 辅助函数：等待回车（更健壮地处理 \r, \n, \r\n）
 func waitEnter(reader *bufio.Reader) {
+	if reader == nil {
+		reader = bufio.NewReader(os.Stdin)
+	}
 	for {
-		_, err := reader.ReadByte()
+		b, err := reader.ReadByte()
 		if err != nil {
 			return
 		}
-		return
+		// 只要读到 \r (13) 或 \n (10) 就视作回车
+		if b == 13 || b == 10 {
+			// 智能清理：如果缓冲区里紧跟着另一个换行符(如 \r 后面的 \n)，一并清理
+			// 使用 Buffered() 确保 Peek 不会触发新的阻塞读取
+			for reader.Buffered() > 0 {
+				peek, _ := reader.Peek(1)
+				if len(peek) > 0 && (peek[0] == 10 || peek[0] == 13) {
+					_, _ = reader.ReadByte()
+				} else {
+					break
+				}
+			}
+			return
+		}
 	}
 }
 
@@ -1943,6 +1959,7 @@ func main() {
 	fmt.Println("  3. 勋章墙记录你的长期成长，编年史记录你的每一次贪婪。")
 	fmt.Print("\n  按回车键，踏入修罗场...")
 	waitEnter(reader)
+	fmt.Println("\n" + Yellow + strings.Repeat("=", 25) + " 🚀 游戏正式开始 " + strings.Repeat("=", 25) + Reset + "\n")
 
 	// 翻牌动画标记：第一天早盘不做动画，之后每次新的早盘做
 
@@ -1962,9 +1979,10 @@ func main() {
 			state.PlayerOrderShares = 0
 			state.PlayerOrderCash = 0
 
-			fmt.Printf("\n"+Purple+"  🕰️ 【%s时段】你正在上班无法看盘，机构与量化正在暗流涌动火拼中..."+Reset+"\n", state.Session)
-			time.Sleep(1500 * time.Millisecond)
+			fmt.Printf("\n"+Purple+"  🕰️ 【%d天-%s】 %s === AI 正在全速撮合处理中 === %s"+Reset+"\n", state.Day, state.Session, Yellow, Reset)
+			time.Sleep(1000 * time.Millisecond)
 			processTurn(state)
+			fmt.Println("\n" + Cyan + strings.Repeat("-", 20) + " 本时段处理完毕 " + strings.Repeat("-", 20) + Reset)
 
 			// 捕获当前状态快照
 			snapshot := captureGameStateSnapshot(state)
@@ -2147,7 +2165,9 @@ func main() {
 			}
 		}
 
+		fmt.Printf("\n"+Blue+"  ⚡ 【%d天-%s】 %s === 玩家指令已提交，系统正在撮合 === %s"+Reset+"\n", state.Day, state.Session, Yellow, Reset)
 		processTurn(state)
+		fmt.Println("\n" + Green + strings.Repeat("=", 65) + Reset)
 
 		// 捕获当前状态快照
 		snapshot := captureGameStateSnapshot(state)
@@ -3614,7 +3634,7 @@ func showEducationTip(signalType string) {
 
 	fmt.Printf("%s└──────────────────────────────────────────────────────┘%s\n", Yellow, Reset)
 	fmt.Println("\n按 Enter 继续...")
-	fmt.Scanln()
+	waitEnter(bufio.NewReader(os.Stdin))
 }
 
 // 显示高级量化分析
@@ -5276,8 +5296,8 @@ func renderProgressBar(label string, val1, val2 int, color1, color2 string) stri
 }
 
 func renderFrame(state *GameState, histCache *HistoricalStateCache) {
-	// 仅重置光标到顶部 (H)，不清除整个历史，允许之前的处理日志“往下滚动”
-	fmt.Print("\033[H") 
+	// 恢复为仅重置光标或添加适量空行，配合分隔符使用
+	fmt.Println("\n" + strings.Repeat("━", 70))
 
 	// ── 环境氛围渲染 ──
 	borderColor := Cyan
