@@ -417,8 +417,10 @@ type GameState struct {
 	DailyFortune   string           // 今日运势
 	InitialAIAssets map[string]float64 // AI 初始资产
 	IntelUsedThisTurn bool             // 本回合是否已使用情报
+	DayHigh        float64          // 今日最高价
+	DayLow         float64          // 今日最低价
+	VolumeHistory  []int            // 成交量历史
 	}
-
 	// 获取交易员头衔
 	func getTraderTitle(level int) string {
 	titles := []string{"", "新手韭菜", "入门散户", "资深股民", "职业交易员", "短线猎人", "趋势专家", "传奇作手", "市场主宰者"}
@@ -2309,6 +2311,18 @@ func processTurn(state *GameState) {
 	state.TotalSellSupplyShares += state.FakeSellPressure
 	state.TotalBuyDemandShares += state.FakeBuyPressure
 	state.PriceHistory = append(state.PriceHistory, state.Price)
+
+	// 更新日内高低价
+	if state.Price > state.DayHigh || state.Session == "早盘" {
+		state.DayHigh = state.Price
+	}
+	if state.Price < state.DayLow || state.Session == "早盘" || state.DayLow == 0 {
+		state.DayLow = state.Price
+	}
+	// 记录成交量 (撮合成功的总量)
+	turnVolume := int(float64(realBuyExpectedShares) * buyProration)
+	state.VolumeHistory = append(state.VolumeHistory, turnVolume)
+
 	state.AddChronicle()
 	state.IntelUsedThisTurn = false // 重置情报使用状态
 	advanceTime(state)
@@ -2583,20 +2597,47 @@ func renderEventCard(event Event, animate bool) {
 	fmt.Printf("  %s╰──────────────────────────────────────────╯%s\n", Purple, Reset)
 }
 
+// 渲染进度条（用于多空对比）
+func renderProgressBar(label string, val1, val2 int, color1, color2 string) string {
+	total := val1 + val2
+	if total == 0 {
+		return label + " [----------] 平衡"
+	}
+	width := 20
+	p1 := int(float64(val1) / float64(total) * float64(width))
+	p2 := width - p1
+	bar := color1 + strings.Repeat("█", p1) + color2 + strings.Repeat("█", p2) + Reset
+	return fmt.Sprintf("%s [%s] %d:%d", label, bar, val1, val2)
+}
+
 func renderFrame(state *GameState) {
 	fmt.Print("\033[H\033[2J\033[3J") // 深度清屏（含滚动缓冲区）
 
-	// ── 顶部标题栏 ──
+	// ── 环境氛围渲染 ──
+	borderColor := Cyan
+	borderChar := "═"
+	marketMood := "平稳"
+	if state.IsMonsterStock {
+		borderColor = Purple
+		borderChar = "🐉"
+		marketMood = "狂热"
+	} else if state.CrashWarningLevel >= 3 {
+		borderColor = Red
+		borderChar = "🚨"
+		marketMood = "高危"
+	}
+
+	// ── 顶部 HUD ──
 	sessionColor := Purple
 	if state.Session == "尾盘" {
 		sessionColor = Blue
 	}
 	change := ((state.Price - state.LastPrice) / state.LastPrice) * 100
 	priceColor := Red
-	arrow := "↑"
+	arrow := "▲"
 	if change < 0 {
 		priceColor = Green
-		arrow = "↓"
+		arrow = "▼"
 	}
 
 	netAsset := float64(state.PlayerShares)*state.Price + state.PlayerCash - state.MarginDebt
@@ -2609,102 +2650,86 @@ func renderFrame(state *GameState) {
 	data := loadAchievementData()
 	title := getTraderTitle(data.Level)
 
-	fmt.Printf("%s╔══════════════════════════════════════════════════════════════╗%s\n", Yellow, Reset)
-	fmt.Printf("%s║%s  身份: %s%s (Lv.%d)%s  │  情报点: %d  │  第 %s%2d%s 天 [%s%s%s]\n",
-		Yellow, Reset, Cyan, title, data.Level, Reset, data.IntelPoints, Yellow, state.Day, Reset, sessionColor, state.Session, Reset)
-	fmt.Printf("%s║%s  现价: %s$%.2f %s (%+.2f%%)%s  │  净资产: %s$%.0f %s(%+.1f%%)%s\n",
-		Yellow, Reset, priceColor, state.Price, arrow, change, Reset, profitColor, netAsset, profitColor, assetProfit, Reset)
-	fmt.Printf("%s╚══════════════════════════════════════════════════════════════╝%s\n", Yellow, Reset)
+	fmt.Printf("%s╔%s╗%s\n", borderColor, strings.Repeat(borderChar, 31), Reset)
+	fmt.Printf("%s║%s  操盘手: %s%s (Lv.%d)%s  │  情报点: %d  │  %s %s%d天-%s%s%s (%s)\n",
+		borderColor, Reset, Cyan, title, data.Level, Reset, data.IntelPoints, borderColor, Yellow, state.Day, sessionColor, state.Session, Reset, marketMood)
+	fmt.Printf("%s║%s  现价: %s$%.2f %s (%+.2f%%)%s  │  日内: %s$%.2f - $%.2f%s\n",
+		borderColor, Reset, priceColor, state.Price, arrow, change, Reset, Yellow, state.DayLow, state.DayHigh, Reset)
+	fmt.Printf("%s║%s  资产: %s$%.0f %s(%+.1f%%)%s  │  日内换手: %.1f%%  │  VIX恐慌: %d/100\n",
+		borderColor, Reset, profitColor, netAsset, profitColor, assetProfit, Reset, float64(state.VolumeHistory[len(state.VolumeHistory)-1])/float64(state.TotalMarketShares)*100, state.CrashWarningLevel*25)
+	fmt.Printf("%s╚%s╝%s\n", borderColor, strings.Repeat(borderChar, 31), Reset)
 
-	// ── 今日运势 ──
+	// ── 市场心理仪表盘 ──
 	if state.DailyFortune != "" {
-		fmt.Printf("  %s🔮 今日操盘运势: %s%s%s\n", Cyan, Yellow, state.DailyFortune, Reset)
+		fmt.Printf("  %s🔮 操盘黄历: %s%s%s\n", Cyan, Yellow, state.DailyFortune, Reset)
+	}
+	sentimentBar := renderProgressBar("  🤝 全服博弈(多:空)", state.TotalBuyDemandShares, state.TotalSellSupplyShares, Green, Red)
+	fmt.Println(sentimentBar)
+
+	// ── 实时快讯 (Ticker) ──
+	if len(state.MarketLogs) > 0 {
+		lastLog := state.MarketLogs[len(state.MarketLogs)-1]
+		fmt.Printf("  %s📢 实时快讯: %s%s\n", Yellow, lastLog, Reset)
 	}
 
-	// ── 操作反馈栏 ──
+	// ── 操作反馈 ──
 	if state.LastActionMessage != "" {
-		fmt.Printf("%s┌─ 上回合操作反馈 ─────────────────────────────────────────────┐%s\n", Green, Reset)
+		fmt.Printf("%s┌──────────────────────────────────────────────────────────────┐%s\n", Green, Reset)
 		fmt.Printf("%s│%s  %s\n", Green, Reset, state.LastActionMessage)
 		fmt.Printf("%s└──────────────────────────────────────────────────────────────┘%s\n", Green, Reset)
 	}
 
-	// ── 事件卡牌区 ──
-	fmt.Printf("\n%s【%s情报】%s\n", Purple, state.Session, Reset)
+	// ── 事件卡牌 ──
 	renderEventCard(state.CurrentEvent, false)
 
-	// ── 崩盘预警 ──
-	if state.CrashWarningLevel >= 2 {
-		warnColor := Yellow
-		if state.CrashWarningLevel >= 3 {
-			warnColor = Red
-		}
-		warningLabels := []string{"", "", "⚠️  危险", "🚨 高危", "🚨 极限黑天鹅"}
-		fmt.Printf("\n%s%s 【崩盘预警 %d/4】%s 流动性极度萎缩！随时可能踩踏！%s\n",
-			warnColor, warningLabels[state.CrashWarningLevel], state.CrashWarningLevel, warningLabels[state.CrashWarningLevel], Reset)
-	}
-	if state.ConsecutiveFallDays >= 2 {
-		fmt.Printf("%s🔴 连续下跌 %d 时段，警惕多杀多踩踏！%s\n", Red, state.ConsecutiveFallDays, Reset)
-	}
-	if state.IsMonsterStock {
-		fmt.Printf("%s🐉 【妖股狂热共识已触发】全服放弃风控，正开启无底线追高击鼓传花！%s\n", Purple, Reset)
-	}
+	// ── 核心监控区 ──
+	fmt.Printf("\n%s┌────────────────────── 📊 核心监控 ──────────────────────────┐%s\n", Cyan, Reset)
 
-	// ── 中区：大盘与你 ──
-	fmt.Printf("\n%s┌────────────────────── 📊 大盘与你 ──────────────────────────┐%s\n", Cyan, Reset)
-
-	recentDays := 40
+	recentDays := 35
 	if len(state.PriceHistory) < recentDays {
 		recentDays = len(state.PriceHistory)
 	}
 	trendStr := renderSparkline(state.PriceHistory[len(state.PriceHistory)-recentDays:])
-	fmt.Printf("%s│%s  K线: [%s%s%s]\n", Cyan, Reset, Cyan, trendStr, Reset)
+	fmt.Printf("%s│%s  实时K线: [%s%s%s]\n", Cyan, Reset, Cyan, trendStr, Reset)
 
 	if state.PlayerShares == 0 {
-		fmt.Printf("%s│%s  持仓: %s【空仓中】%s\n", Cyan, Reset, Blue, Reset)
+		fmt.Printf("%s│%s  持仓: %s【空仓中】%s", Cyan, Reset, Blue, Reset)
 	} else {
 		frozenInfo := ""
 		if state.PlayerFrozenShares > 0 {
-			frozenInfo = fmt.Sprintf("%s  (可用:%d / 冻结:%d T+1)%s", Yellow, state.PlayerAvailableShares, state.PlayerFrozenShares, Reset)
+			frozenInfo = fmt.Sprintf("%s (可用:%d / 冻结:%d T+1)%s", Yellow, state.PlayerAvailableShares, state.PlayerFrozenShares, Reset)
 		}
-		fmt.Printf("%s│%s  持仓: %s%d 股%s  均价:$%.2f%s\n", Cyan, Reset, Red, state.PlayerShares, Reset, state.PlayerAvgCost, frozenInfo)
+		fmt.Printf("%s│%s  持仓: %s%d 股%s (均价:$%.2f)%s", Cyan, Reset, Red, state.PlayerShares, Reset, state.PlayerAvgCost, frozenInfo)
 	}
-	fmt.Printf("%s│%s  现金: $%.2f", Cyan, Reset, state.PlayerCash)
+	fmt.Printf("  %s现金: $%.2f%s\n", Yellow, state.PlayerCash, Reset)
+
 	if state.MarginDebt > 0 {
-		fmt.Printf("  %s负债:$%.2f ⚡爆仓预警%s", Red, state.MarginDebt, Reset)
+		fmt.Printf("%s│%s  %s⚠️  杠杆风险: 负债$%.2f  (随时面临爆仓强平)%s\n", Cyan, Reset, Red, state.MarginDebt, Reset)
 	}
-	fmt.Println()
 
-	// 真实现价盘口对抗
-	demandShares := state.TotalBuyDemandShares
-	supplyShares := state.TotalSellSupplyShares
-
-	pressureStr := fmt.Sprintf("  🚀全服买盘承接: %s%d股%s   🆚   🧨全服抛压: %s%d股%s",
-		Green, demandShares, Reset,
-		Red, supplyShares, Reset,
-	)
-
-	fmt.Printf("%s│%s\n%s│%s%s\n", Cyan, Reset, Cyan, Reset, pressureStr)
-	fmt.Printf("%s│%s  追踪:", Cyan, Reset)
+	// 盘口动态 L2 Detail
+	fmt.Printf("%s│%s  盘口: 买盘需求%d / 卖盘抛压%d  │  净流向: %d\n", Cyan, Reset, state.TotalBuyDemandShares, state.TotalSellSupplyShares, state.TotalBuyDemandShares-state.TotalSellSupplyShares)
+	
+	fmt.Printf("%s│%s  资金流: ", Cyan, Reset)
 	if state.WhaleSelling > 0 {
-		fmt.Printf("  %s🐋砸盘%d股%s", Red, state.WhaleSelling, Reset)
+		fmt.Printf("%s🐋砸盘%d %s", Red, state.WhaleSelling, Reset)
 	}
 	if state.WhaleBuying > 0 {
-		fmt.Printf("  %s🐋抢盘%d股%s", Green, state.WhaleBuying, Reset)
+		fmt.Printf("%s🐋抢筹%d %s", Green, state.WhaleBuying, Reset)
 	}
 	if state.RetailSelling > 0 {
-		fmt.Printf("  %s🥬割肉%d股%s", Red, state.RetailSelling, Reset)
+		fmt.Printf("%s🥬割肉%d %s", Red, state.RetailSelling, Reset)
 	}
 	if state.RetailBuying > 0 {
-		fmt.Printf("  %s🥬追高%d股%s", Green, state.RetailBuying, Reset)
+		fmt.Printf("%s追高%d %s", Green, state.RetailBuying, Reset)
 	}
 	fmt.Println()
 	fmt.Printf("%s└──────────────────────────────────────────────────────────────┘%s\n", Cyan, Reset)
 
-	// ── 右区：筹码分布图 ──
-	fmt.Printf("\n%s┌────────────────────── 🎯 盘口博弈 ───────────────────────────┐%s\n", Cyan, Reset)
+	// ── 辅助分析 ──
+	fmt.Printf("\n%s┌────────────────────── 🧠 辅助分析 ──────────────────────────┐%s\n", Cyan, Reset)
 	renderCostDistribution(state)
 
-	// 智能策略助手
 	if state.PlayerShares > 0 {
 		advice := generateStrategyAdvice(state)
 		actionColor := Green
@@ -2717,29 +2742,24 @@ func renderFrame(state *GameState) {
 		} else if advice.RiskLevel == "极高风险" {
 			riskColor = Red
 		}
-
-		fmt.Printf("  %s────────────────── 💡 策略助手 ──────────────────%s\n", Cyan, Reset)
-		fmt.Printf("  风险: %s%-6s%s  收益: %s%+.1f%%%s  建议: %s%s %s%s\n",
-			riskColor, advice.RiskLevel, Reset,
-			profitColor, advice.ProfitRatio*100, Reset,
-			actionColor, advice.Confidence, advice.Action, Reset)
-		fmt.Printf("  原因: %s\n", advice.Reason)
+		fmt.Printf("  %s💡 建议: %s%s %s%s  (风险:%s%s%s)\n", Cyan, actionColor, advice.Confidence, advice.Action, Reset, riskColor, advice.RiskLevel, Reset)
+		fmt.Printf("    原因: %s\n", advice.Reason)
 	}
 	fmt.Printf("%s└──────────────────────────────────────────────────────────────┘%s\n", Cyan, Reset)
 
-	// ── 实时市场动态 ──
-	fmt.Printf("\n%s┌────────────────────── 📰 实时市场动态 ──────────────────────┐%s\n", Yellow, Reset)
-	if len(state.MarketLogs) == 0 {
-		fmt.Printf("  %s(正在等待市场消息...)%s\n", Gray, Reset)
-	} else {
-		for _, log := range state.MarketLogs {
-			fmt.Printf("  %s\n", log)
-		}
+	// ── 实时动态 Feed ──
+	fmt.Printf("\n%s┌────────────────────── 📰 市场 Feed ──────────────────────────┐%s\n", Yellow, Reset)
+	displayLogs := state.MarketLogs
+	if len(displayLogs) > 5 {
+		displayLogs = displayLogs[len(displayLogs)-5:]
+	}
+	for _, log := range displayLogs {
+		fmt.Printf("  %s\n", log)
 	}
 	fmt.Printf("%s└──────────────────────────────────────────────────────────────┘%s\n", Yellow, Reset)
 
-	// ── AI 图鉴 ──
-	fmt.Printf("\n%s┌────────────────────── 🤖 盘口AI图鉴 ────────────────────────┐%s\n", Cyan, Reset)
+	// ── AI 列表 ──
+	fmt.Printf("\n%s┌────────────────────── 🤖 AI 实时仓位 ──────────────────────┐%s\n", Cyan, Reset)
 	sortedAIs := make([]*AI, len(state.AIs))
 	copy(sortedAIs, state.AIs)
 	sort.Slice(sortedAIs, func(i, j int) bool { return sortedAIs[i].Shares > sortedAIs[j].Shares })
@@ -2751,7 +2771,21 @@ func renderFrame(state *GameState) {
 		}
 		statusStr := fmt.Sprintf("%s%+.0f%%%s", Red, aiProfit, Reset)
 		if ai.HasSold || ai.Shares == 0 {
-			statusStr = "\033[90m空仓伺机\033[0m"
+			statusStr = "\033[90m空仓\033[0m"
+		}
+		
+		// 恢复并美化特殊状态标签
+		statusFlagStr := ""
+		if ai.StatusFlag == "Spoofing" {
+			statusFlagStr = Purple + "[诱多中] " + Reset
+		} else if ai.StatusFlag == "GridTrading" {
+			statusFlagStr = Blue + "[网格中] " + Reset
+		} else if ai.StatusFlag == "Bailout" {
+			statusFlagStr = Red + "[砸锅卖铁救市] " + Reset
+		} else if ai.StatusFlag == "ForcedLiquidation" {
+			statusFlagStr = Yellow + "[爆仓清场] " + Reset
+		} else if ai.StatusFlag == "Shakeout" {
+			statusFlagStr = Cyan + "[震仓洗盘] " + Reset
 		}
 
 		nameColor := Cyan
@@ -2762,30 +2796,8 @@ func renderFrame(state *GameState) {
 		} else {
 			nameColor = Green
 		}
-
-		opinionColor := Reset
-		if ai.Shares == 0 {
-			opinionColor = "\033[90m"
-		}
-
-		statusFlagStr := ""
-		if ai.StatusFlag == "Spoofing" {
-			statusFlagStr = " " + Purple + "[挂假单吓人]" + Reset
-		}
-		if ai.StatusFlag == "GridTrading" {
-			statusFlagStr = " " + Blue + "[网格挂单]" + Reset
-		}
-		if ai.StatusFlag == "Bailout" {
-			statusFlagStr = " " + Red + "[砸锅卖铁救市]" + Reset
-		}
-		if ai.StatusFlag == "ForcedLiquidation" {
-			statusFlagStr = " " + Yellow + "[资不抵债强平!]" + Reset
-		}
-
-		fmt.Printf("  %s[%s] %-12s%s│ %5d股 │ %s │ %s%s%s%s\n",
-			nameColor, ai.SubType, ai.Name, Reset,
-			ai.Shares, statusStr,
-			opinionColor, ai.LastOpinion, Reset, statusFlagStr)
+		fmt.Printf("  %s[%-8s] %-12s%s │ %5d股 │ %-8s │ %s%s%s%s\n",
+			nameColor, ai.SubType, ai.Name, Reset, ai.Shares, statusStr, statusFlagStr, Gray, ai.LastOpinion, Reset)
 	}
 	fmt.Printf("%s└──────────────────────────────────────────────────────────────┘%s\n", Cyan, Reset)
 }
