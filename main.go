@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"sort"
@@ -245,6 +246,27 @@ type GameRecord struct {
 	RiskScore   int     `json:"risk_score"`   // 风控分
 }
 
+// 成就系统
+type Achievement struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	IsUnlocked  bool   `json:"is_unlocked"`
+	UnlockDate  string `json:"unlock_date"`
+	Level       int    `json:"level"` // 0:未解锁, 1:铜, 2:银, 3:金
+}
+
+type AchievementData struct {
+	Achievements    map[string]Achievement `json:"achievements"`
+	TotalGames      int                    `json:"total_games"`
+	TotalProfit     float64                `json:"total_profit"`
+	MaxSingleProfit float64               `json:"max_single_profit"`
+	CrashesEscaped  int                    `json:"crashes_escaped"`
+	BustTimes       int                    `json:"bust_times"`
+	TotalSRanks     int                    `json:"total_sranks"`
+	ThemesMastered  map[string]bool        `json:"themes_mastered"` // 存储已获得A级及以上的主题
+}
+
 type TradePoint struct {
 	Day           int
 	Session       string
@@ -259,7 +281,37 @@ type RecordHistory struct {
 	Records []GameRecord `json:"records"`
 }
 
-const recordFilePath = "game_records.json"
+const (
+	recordFilePath      = "game_records.json"
+	achievementFilePath = "achievements.json"
+)
+
+// 预设成就列表 (单次解锁类)
+var DefaultAchievements = []Achievement{
+	{ID: "FIRST_PROFIT", Name: "初露锋芒", Description: "第一次在游戏中获得正收益率"},
+	{ID: "FIRST_S_RANK", Name: "股神降临", Description: "获得一次 S 级评价"},
+	{ID: "CRASH_SURVIVOR", Name: "劫后余生", Description: "在崩盘中成功逃顶，空仓避险"},
+	{ID: "HUNDRED_PERCENT", Name: "翻倍大神", Description: "单场收益率超过 100%"},
+	{ID: "LEVERAGE_MASTER", Name: "刀尖舔血", Description: "使用 3 倍杠杆并获得 S 级评价"},
+	{ID: "BANKRUPT", Name: "交学费", Description: "第一次爆仓（净资产归零）"},
+	{ID: "DIAMOND_HANDS", Name: "铁头功", Description: "格局到底：从未卖出且最终获利超过 50%"},
+	{ID: "THEME_MASTER", Name: "全能选手", Description: "在 3 个不同的主题模式中获得 A 级及以上评价"},
+}
+
+// 阶梯勋章配置
+type TieredMedal struct {
+	ID          string
+	Name        string
+	Description string
+	Thresholds  []float64 // 铜、银、金的阈值
+}
+
+var TieredMedalConfigs = []TieredMedal{
+	{ID: "MEDAL_TRADER", Name: "职业交易员", Description: "累计完成的游戏场次", Thresholds: []float64{5, 20, 50}},
+	{ID: "MEDAL_SURVIVOR", Name: "避险专家", Description: "累计崩盘逃顶成功次数", Thresholds: []float64{1, 5, 15}},
+	{ID: "MEDAL_PROFIT", Name: "盈利大师", Description: "累计获得的收益率总量", Thresholds: []float64{1.0, 5.0, 20.0}},
+	{ID: "MEDAL_S_RANK", Name: "传奇操盘手", Description: "累计获得的 S 级评价次数", Thresholds: []float64{1, 5, 10}},
+}
 
 type AI struct {
 	ID             string
@@ -290,6 +342,17 @@ type AutoStrategy struct {
 	StopLoss       float64 // 止损线（例如-0.1表示-10%止损）
 	RebuyThreshold float64 // 回买阈值（价格跌到多少时考虑买回，例如0.9表示跌10%）
 	EnableRebuy    bool    // 是否启用回买
+}
+
+type ChronicleEntry struct {
+	Day          int
+	Session      string
+	Price        float64
+	Change       float64
+	Event        string
+	PlayerAction string // "买入", "卖出", "持仓", "空仓"
+	WhaleAction  string // "吸筹", "拉升", "出货", "洗盘", "观望"
+	MarketMood   string // "正常", "狂热", "恐慌"
 }
 
 type GameState struct {
@@ -345,7 +408,74 @@ type GameState struct {
 	PlayerOrderShares int
 	PlayerOrderCash   float64
 
-	TradePoints []TradePoint // 上帝视角复盘记录点
+	TradePoints []TradePoint     // 上帝视角复盘记录点
+	MarketLogs  []string         // 实时市场动态日志
+	Chronicle   []ChronicleEntry // 操盘编年史
+	DailyFortune string           // 今日运势
+	InitialAIAssets map[string]float64 // AI 初始资产
+}
+
+// 添加市场日志
+func (s *GameState) AddLog(msg string) {
+	s.MarketLogs = append(s.MarketLogs, msg)
+	if len(s.MarketLogs) > 8 {
+		s.MarketLogs = s.MarketLogs[1:]
+	}
+}
+
+// 记录编年史
+func (s *GameState) AddChronicle() {
+	playerAction := "空仓"
+	if s.PlayerShares > 0 {
+		playerAction = "持仓"
+	}
+	// 特殊动作覆盖
+	if s.PlayerOrderType == "Buy" {
+		playerAction = "买入"
+	} else if s.PlayerOrderType == "Sell" {
+		playerAction = "卖出"
+	}
+
+	whaleAction := "观望"
+	for _, ai := range s.AIs {
+		if ai.Type == "Whale" && ai.StatusFlag != "" {
+			switch ai.StatusFlag {
+			case "Spoofing":
+				whaleAction = "诱多"
+			case "Shakeout":
+				whaleAction = "洗盘"
+			case "Bailout":
+				whaleAction = "救市"
+			case "ForcedLiquidation":
+				whaleAction = "出局"
+			}
+		}
+	}
+	if s.WhaleBuying > s.WhaleSelling {
+		whaleAction = "拉升"
+	} else if s.WhaleSelling > s.WhaleBuying {
+		whaleAction = "砸盘"
+	}
+
+	mood := "正常"
+	if s.IsMonsterStock {
+		mood = "狂热"
+	} else if s.CrashWarningLevel >= 3 {
+		mood = "恐慌"
+	}
+
+	change := (s.Price - s.LastPrice) / s.LastPrice
+
+	s.Chronicle = append(s.Chronicle, ChronicleEntry{
+		Day:          s.Day,
+		Session:      s.Session,
+		Price:        s.Price,
+		Change:       change,
+		Event:        s.CurrentEvent.Title,
+		PlayerAction: playerAction,
+		WhaleAction:  whaleAction,
+		MarketMood:   mood,
+	})
 }
 
 // 加载历史战绩
@@ -489,6 +619,292 @@ func showRecordHistory(reader *bufio.Reader) {
 	reader.ReadString('\n')
 }
 
+// 加载成就数据
+func loadAchievementData() AchievementData {
+	data := AchievementData{
+		Achievements:   make(map[string]Achievement),
+		ThemesMastered: make(map[string]bool),
+	}
+
+	// 初始化默认成就
+	for _, ach := range DefaultAchievements {
+		data.Achievements[ach.ID] = ach
+	}
+	// 初始化阶梯勋章
+	for _, cfg := range TieredMedalConfigs {
+		data.Achievements[cfg.ID] = Achievement{
+			ID:          cfg.ID,
+			Name:        cfg.Name,
+			Description: cfg.Description,
+			Level:       0,
+		}
+	}
+
+	file, err := os.ReadFile(achievementFilePath)
+	if err == nil {
+		json.Unmarshal(file, &data)
+		if data.Achievements == nil {
+			data.Achievements = make(map[string]Achievement)
+		}
+		// 确保所有配置都在 map 中
+		for _, ach := range DefaultAchievements {
+			if _, exists := data.Achievements[ach.ID]; !exists {
+				data.Achievements[ach.ID] = ach
+			}
+		}
+		for _, cfg := range TieredMedalConfigs {
+			if _, exists := data.Achievements[cfg.ID]; !exists {
+				data.Achievements[cfg.ID] = Achievement{
+					ID:          cfg.ID,
+					Name:        cfg.Name,
+					Description: cfg.Description,
+					Level:       0,
+				}
+			}
+		}
+		if data.ThemesMastered == nil {
+			data.ThemesMastered = make(map[string]bool)
+		}
+	}
+
+	return data
+}
+
+// 保存成就数据
+func saveAchievementData(data AchievementData) error {
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(achievementFilePath, jsonData, 0644)
+}
+
+// 检测成就
+func checkAchievements(state *GameState, rank PlayerRank) []Achievement {
+	data := loadAchievementData()
+	newUnlocked := []Achievement{}
+	now := time.Now().Format("2006-01-02 15:04:05")
+
+	finalAsset := float64(state.PlayerShares)*state.Price + state.PlayerCash - state.MarginDebt
+	finalProfit := (finalAsset - state.InitialAsset) / state.InitialAsset
+
+	// 更新统计数据
+	data.TotalGames++
+	data.TotalProfit += finalProfit
+	if finalProfit > data.MaxSingleProfit {
+		data.MaxSingleProfit = finalProfit
+	}
+	if rank.Grade == "S" {
+		data.TotalSRanks++
+	}
+
+	// 辅助函数：尝试解锁单次成就
+	unlock := func(id string) {
+		ach := data.Achievements[id]
+		if !ach.IsUnlocked {
+			ach.IsUnlocked = true
+			ach.UnlockDate = now
+			data.Achievements[id] = ach
+			newUnlocked = append(newUnlocked, ach)
+		}
+	}
+
+	// 1. 初露锋芒
+	if finalProfit > 0 {
+		unlock("FIRST_PROFIT")
+	}
+
+	// 2. 股神降临
+	if rank.Grade == "S" {
+		unlock("FIRST_S_RANK")
+	}
+
+	// 3. 劫后余生
+	if state.IsCrashed && state.PlayerShares == 0 && state.PlayerSoldDay > 0 {
+		unlock("CRASH_SURVIVOR")
+		data.CrashesEscaped++
+	}
+
+	// 4. 翻倍大神
+	if finalProfit >= 1.0 {
+		unlock("HUNDRED_PERCENT")
+	}
+
+	// 5. 刀尖舔血
+	if state.MarginDebt > 0 && rank.Grade == "S" {
+		unlock("LEVERAGE_MASTER")
+	}
+
+	// 6. 交学费
+	if state.IsMarginCalled || (state.IsCrashed && finalAsset <= 0) {
+		unlock("BANKRUPT")
+		data.BustTimes++
+	}
+
+	// 7. 铁头功
+	if len(state.TradeHistory) == 0 && finalProfit >= 0.5 {
+		unlock("DIAMOND_HANDS")
+	}
+
+	// 8. 全能选手
+	if rank.Grade == "S" || rank.Grade == "A" {
+		data.ThemesMastered[CurrentTheme.Name] = true
+		if len(data.ThemesMastered) >= 3 {
+			unlock("THEME_MASTER")
+		}
+	}
+
+	// --- 阶梯勋章逻辑 ---
+	checkMedalTier := func(id string, currentVal float64, thresholds []float64) {
+		ach := data.Achievements[id]
+		oldLevel := ach.Level
+		newLevel := 0
+		for i, t := range thresholds {
+			if currentVal >= t {
+				newLevel = i + 1
+			}
+		}
+		if newLevel > oldLevel {
+			ach.Level = newLevel
+			ach.IsUnlocked = true
+			ach.UnlockDate = now
+			// 为了通知显示，我们临时修改名称
+			tierNames := []string{"", "铜", "银", "金"}
+			notifyAch := ach
+			notifyAch.Name = fmt.Sprintf("%s勋章 [%s级]", ach.Name, tierNames[newLevel])
+			newUnlocked = append(newUnlocked, notifyAch)
+			data.Achievements[id] = ach
+		}
+	}
+
+	for _, cfg := range TieredMedalConfigs {
+		val := 0.0
+		switch cfg.ID {
+		case "MEDAL_TRADER":
+			val = float64(data.TotalGames)
+		case "MEDAL_SURVIVOR":
+			val = float64(data.CrashesEscaped)
+		case "MEDAL_PROFIT":
+			val = data.TotalProfit
+		case "MEDAL_S_RANK":
+			val = float64(data.TotalSRanks)
+		}
+		checkMedalTier(cfg.ID, val, cfg.Thresholds)
+	}
+
+	saveAchievementData(data)
+	return newUnlocked
+}
+
+// 定义勋章颜色
+const (
+	Gray   = "\033[90m"
+	Gold   = "\033[33m"
+	Silver = "\033[37m"
+	Bronze = "\033[31m"
+)
+
+// 显示成就墙
+func showAchievements(reader *bufio.Reader) {
+	data := loadAchievementData()
+
+	fmt.Print("\033[H\033[2J") // 清屏
+	fmt.Println(Purple + "╔══════════════════════════════════════════════════════╗")
+	fmt.Println("║             荣誉殿堂 - 勋章墙                       ║")
+	fmt.Println("╚══════════════════════════════════════════════════════╝" + Reset)
+
+	// 统计信息
+	unlockedCount := 0
+	for _, ach := range data.Achievements {
+		if ach.IsUnlocked {
+			unlockedCount++
+		}
+	}
+
+	fmt.Println("\n" + Cyan + "🏆 总体勋章概览" + Reset)
+	fmt.Printf("  已解锁成就/勋章: %d/%d   总场次: %d   总S级: %d\n",
+		unlockedCount, len(data.Achievements), data.TotalGames, data.TotalSRanks)
+	fmt.Printf("  累计收益: %+.1f%%   单场最高: %+.1f%%\n", data.TotalProfit*100, data.MaxSingleProfit*100)
+	fmt.Printf("  崩盘逃顶: %d 次   爆仓次数: %d 次\n", data.CrashesEscaped, data.BustTimes)
+
+	fmt.Println("\n" + Cyan + "🎖️ 阶梯勋章 (进步永无止境)" + Reset)
+	fmt.Println(Cyan + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + Reset)
+
+	for _, cfg := range TieredMedalConfigs {
+		ach := data.Achievements[cfg.ID]
+		color := Gray
+		tierName := "未获得"
+		switch ach.Level {
+		case 1:
+			color = Bronze
+			tierName = "铜级"
+		case 2:
+			color = Silver
+			tierName = "银级"
+		case 3:
+			color = Gold
+			tierName = "金级"
+		}
+
+		currentVal := 0.0
+		unit := ""
+		switch cfg.ID {
+		case "MEDAL_TRADER":
+			currentVal = float64(data.TotalGames)
+			unit = "场"
+		case "MEDAL_SURVIVOR":
+			currentVal = float64(data.CrashesEscaped)
+			unit = "次"
+		case "MEDAL_PROFIT":
+			currentVal = data.TotalProfit * 100
+			unit = "%"
+		case "MEDAL_S_RANK":
+			currentVal = float64(data.TotalSRanks)
+			unit = "次"
+		}
+
+		// 计算下一级进度
+		nextThreshold := 0.0
+		if ach.Level < 3 {
+			nextThreshold = cfg.Thresholds[ach.Level]
+			if cfg.ID == "MEDAL_PROFIT" {
+				nextThreshold *= 100
+			}
+		}
+
+		fmt.Printf("\n%s● [%s] %s%s  %s\n", color, tierName, ach.Name, Reset, ach.Description)
+		if ach.Level < 3 {
+			progress := currentVal / nextThreshold * 10
+			if progress > 10 {
+				progress = 10
+			}
+			bar := strings.Repeat("█", int(progress)) + strings.Repeat("░", 10-int(progress))
+			fmt.Printf("    进度: [%s] %.0f/%.0f %s\n", bar, currentVal, nextThreshold, unit)
+		} else {
+			fmt.Printf("    %s✨ 已达成最高荣誉：金级勋章 ✨%s\n", Gold, Reset)
+		}
+	}
+
+	fmt.Println("\n" + Cyan + "📜 基础成就 (里程碑)" + Reset)
+	fmt.Println(Cyan + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + Reset)
+
+	// 按预设顺序显示
+	for _, defaultAch := range DefaultAchievements {
+		ach := data.Achievements[defaultAch.ID]
+		if ach.IsUnlocked {
+			fmt.Printf("\n%s🌟 [%s]%s  %s\n", Gold, ach.Name, Reset, ach.Description)
+			fmt.Printf("    %s解锁时间: %s%s\n", Green, ach.UnlockDate, Reset)
+		} else {
+			fmt.Printf("\n%s🔒 [???]%s  %s\n", Gray, Reset, ach.Description)
+			fmt.Printf("    %s尚未解锁%s\n", Gray, Reset)
+		}
+	}
+
+	fmt.Println("\n" + Cyan + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + Reset)
+	fmt.Print("\n按回车键返回...")
+	reader.ReadString('\n')
+}
+
 func selectGameMode(reader *bufio.Reader) (string, int, *AutoStrategy) {
 	fmt.Print("\033[H\033[2J") // 清屏
 	fmt.Println(Purple + "╔══════════════════════════════════════════════════════╗")
@@ -616,6 +1032,23 @@ func selectTheme(reader *bufio.Reader) *ThemeMode {
 	return selectedTheme
 }
 
+func renderSplash() {
+	fmt.Print("\033[H\033[2J")
+	logo := `
+  %s███████╗ ██████╗  ██████╗ ██╗  ██╗     ██████╗  █████╗ ███╗   ███╗███████╗
+  ██╔════╝██╔═══██╗██╔════╝ ██║ ██╔╝     ██╔════╝ ██╔══██╗████╗ ████║██╔════╝
+  ███████╗██║   ██║██║      █████╔╝      ██║  ███╗███████║██╔████╔██║█████╗  
+  ╚════██║██║   ██║██║      ██╔═██╗      ██║   ██║██╔══██║██║╚██╔╝██║██╔══╝  
+  ███████║╚██████╔╝╚██████╗ ██║  ██╗     ╚██████╔╝██║  ██║██║ ╚═╝ ██║███████╗
+  ╚══════╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝      ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝%s
+                                                                             
+           %s>> 妖股搏杀：从韭菜到庄家的修罗场 <<%s
+           %s[ 模拟器版本 v2.5 - 勋章/编年史版 ]%s
+	`
+	fmt.Printf(logo, Red, Reset, Yellow, Reset, Cyan, Reset)
+	fmt.Println("\n  " + strings.Repeat("—", 65))
+}
+
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	reader := bufio.NewReader(os.Stdin)
@@ -627,31 +1060,44 @@ func main() {
 	CurrentTheme = selectTheme(reader)
 	Events = CurrentTheme.Events
 
-	// 询问是否查看历史战绩
-	fmt.Print("\033[H\033[2J") // 清屏
-	fmt.Println(Cyan + "是否查看历史战绩？" + Reset)
-	fmt.Print(Yellow + "[1] 查看历史战绩  [2] 直接开始游戏: " + Reset)
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
-	if input == "1" {
-		showRecordHistory(reader)
+	// 询问是否查看历史战绩或成就
+	for {
+		renderSplash()
+		fmt.Println(Cyan + "      欢迎来到妖股搏杀！请选择操作：" + Reset)
+		fmt.Println()
+		fmt.Println(Yellow + "      [1] 查看历史战绩" + Reset)
+		fmt.Println(Yellow + "      [2] 查看成就墙 (荣誉殿堂)" + Reset)
+		fmt.Println(Yellow + "      [3] 直接开始游戏" + Reset)
+		fmt.Println()
+		fmt.Print(Green + "      请输入编号 (1-3): " + Reset)
+
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+
+		if input == "1" {
+			showRecordHistory(reader)
+		} else if input == "2" {
+			showAchievements(reader)
+		} else {
+			break // 开始游戏
+		}
 	}
 
 	state := initGame(gameMode, maxDays, autoStrategy)
 
-	fmt.Print("\033[H\033[2J") // 清屏
-	fmt.Println(Yellow + "=====================================================")
-	fmt.Printf("       妖股搏杀 - %s\n", CurrentTheme.Name)
-	fmt.Println("       地狱修罗难度：双时段对决")
-	fmt.Println("=====================================================" + Reset)
-	fmt.Println(Red + "【警告】市场流动性已极度匮乏！AI 极其恐慌脆弱！" + Reset)
-	fmt.Println("规则更新：")
-	fmt.Println("1. 每天分为【早盘】、【盘中上午】、【盘中下午】和【尾盘】四次决策大循环！")
-	fmt.Println("2. 【盘中】时间你作为散户无法看盘交易，但网格量化会在盘中暗算火拼多次！")
-	fmt.Println("3. 各类庄家人设不同，盘口博弈完全零和，且增加了国家队、假单、资金链等复杂逻辑。")
-	fmt.Println("4. 💡 智能策略助手会给你实时建议。")
-	fmt.Print("\n按回车键开始第一天早盘的修罗场...")
+	renderSplash()
+	fmt.Printf("       %s当前选择主题：%s%s%s\n", Cyan, Yellow, CurrentTheme.Name, Reset)
+	fmt.Printf("       %s【地狱修罗难度：全周期零和博弈】%s\n", Red, Reset)
+	fmt.Println("  " + strings.Repeat("—", 65))
+	fmt.Println(Red + "  【财富掠夺逻辑已开启】" + Reset)
+	fmt.Println("  在这个市场中，没有新资金进入。每一分钱的赚取都意味着另一个对手盘的破产。")
+	fmt.Println("  1. 股价由买卖盘实时撮合决定，没有绝对的对错，只有对手盘。")
+	fmt.Println("  2. 注意观察游资(Whale)的动作，他们可能是你的轿夫，也可能是屠夫。")
+	fmt.Println("  3. 勋章墙记录你的长期成长，编年史记录你的每一次贪婪。")
+	fmt.Print("\n  按回车键，踏入修罗场...")
 	reader.ReadString('\n')
+
+	// 翻牌动画标记：第一天早盘不做动画，之后每次新的早盘做
 
 	// 翻牌动画标记：第一天早盘不做动画，之后每次新的早盘做
 	prevSession := ""
@@ -831,6 +1277,8 @@ func initGame(gameMode string, maxDays int, autoStrategy *AutoStrategy) *GameSta
 		WhaleSelling:          0,
 		RetailBuying:          0,
 		RetailSelling:         0,
+		DailyFortune:          "宜：空仓观望，忌：满仓梭哈", // 初始默认
+		InitialAIAssets:       make(map[string]float64),
 	}
 
 	// 真正的零和市场生态 (Total = 100,000 股)
@@ -854,6 +1302,7 @@ func initGame(gameMode string, maxDays int, autoStrategy *AutoStrategy) *GameSta
 
 	// Whale有内幕消息优势（提前知道下一个事件），刺客有场外配资负债
 	for _, ai := range state.AIs {
+		state.InitialAIAssets[ai.ID] = ai.Cash + float64(ai.Shares)*state.Price
 		if ai.Type == "Whale" {
 			ai.HasInsiderInfo = true
 			if ai.SubType == "刺客" {
@@ -1648,6 +2097,7 @@ func processTurn(state *GameState) {
 
 	if totalBuyDemandShares == 0 && totalSellShares == 0 {
 		state.Price = state.Price * (1.0 + (rand.Float64()*0.01 - 0.005))
+		state.AddChronicle()
 		advanceTime(state)
 		return
 	}
@@ -1756,9 +2206,15 @@ func processTurn(state *GameState) {
 			ai.Cash += float64(actualSell) * state.Price
 			if ai.Type == "Whale" {
 				state.WhaleSelling += actualSell
+				if actualSell > 1000 {
+					state.AddLog(fmt.Sprintf("%s 🐋 游资砸盘: %s 抛售 %d 股%s", Red, ai.Name, actualSell, Reset))
+				}
 			}
 			if ai.Type == "Retail" {
 				state.RetailSelling += actualSell
+			}
+			if ai.StatusFlag == "ForcedLiquidation" {
+				state.AddLog(fmt.Sprintf("%s 💥 爆仓强平: %s 资金链断裂被强制清场%s", Red, ai.Name, Reset))
 			}
 		} else if ai.OrderType == "Buy" {
 			actualBuy := int(float64(int(ai.OrderCash/state.Price)) * buyProration)
@@ -1768,6 +2224,12 @@ func processTurn(state *GameState) {
 				ai.Shares += actualBuy
 				ai.Cost = (oldTotal + cost) / float64(ai.Shares)
 				ai.Cash -= cost
+				if ai.Type == "Whale" && actualBuy > 1000 {
+					state.AddLog(fmt.Sprintf("%s 🐋 游资进场: %s 抢筹 %d 股%s", Green, ai.Name, actualBuy, Reset))
+				}
+				if ai.StatusFlag == "Bailout" {
+					state.AddLog(fmt.Sprintf("%s 🛡️ 国家队救市: %s 开启无限额护盘%s", Red, ai.Name, Reset))
+				}
 			}
 			if ai.Type == "Whale" {
 				state.WhaleBuying += actualBuy
@@ -1782,11 +2244,20 @@ func processTurn(state *GameState) {
 			ai.HasSold = false
 		}
 	}
+	// 价格异动日志
+	if math.Abs(priceModifier) > 0.08 {
+		color := Green
+		if priceModifier < 0 {
+			color = Red
+		}
+		state.AddLog(fmt.Sprintf("%s 📊 价格剧震: 本回合波幅达到 %.1f%%%s", color, priceModifier*100, Reset))
+	}
 	state.BuyPressure = int(totalBuyCash / state.Price)
 	state.SellPressure = totalSellShares
 	state.TotalSellSupplyShares += state.FakeSellPressure
 	state.TotalBuyDemandShares += state.FakeBuyPressure
 	state.PriceHistory = append(state.PriceHistory, state.Price)
+	state.AddChronicle()
 	advanceTime(state)
 }
 
@@ -1804,6 +2275,29 @@ func advanceTime(state *GameState) {
 		state.PlayerFrozenShares = 0
 		state.CurrentEvent = state.NextEvent
 		state.NextEvent = selectNextEventByMarkov(state.CurrentEvent, Events)
+		state.AddLog(fmt.Sprintf("%s 💡 市场风向变化: %s%s%s", Purple, Yellow, state.CurrentEvent.Title, Reset))
+
+		// 生成今日运势
+		fortunes := []string{
+			"宜：格局，忌：核按钮",
+			"宜：空仓观望，忌：满仓梭哈",
+			"宜：建仓，忌：贪婪",
+			"宜：止损，忌：死扛",
+			"宜：吃肉，忌：关灯面",
+		}
+		state.DailyFortune = fortunes[rand.Intn(len(fortunes))]
+
+		// 30% 概率产生市场传闻（暗示明天的事件）
+		if rand.Float64() < 0.3 {
+			rumors := map[EventCategory]string{
+				ExtremeOptimistic: "传闻：政策面可能有重磅利好正在路上...",
+				MildOptimistic:    "传闻：某行业大资金正在悄悄建仓...",
+				Neutral:           "传闻：明天可能是个无聊的平盘日...",
+				MildPessimistic:   "传闻：市场情绪似乎在悄悄转冷...",
+				ExtremePanic:      "传闻：小心，今晚可能要出重大利空雷...",
+			}
+			state.AddLog(fmt.Sprintf("%s 🕵️ 小道消息: %s%s", Cyan, rumors[state.NextEvent.Category], Reset))
+		}
 	}
 
 	// 杠杆爆仓检测
@@ -2068,6 +2562,11 @@ func renderFrame(state *GameState) {
 		profitColor, netAsset, profitColor, assetProfit, Reset)
 	fmt.Printf("%s╚══════════════════════════════════════════════════════════════╝%s\n", Yellow, Reset)
 
+	// ── 今日运势 ──
+	if state.DailyFortune != "" {
+		fmt.Printf("  %s🔮 今日操盘运势: %s%s%s\n", Cyan, Yellow, state.DailyFortune, Reset)
+	}
+
 	// ── 操作反馈栏 ──
 	if state.LastActionMessage != "" {
 		fmt.Printf("%s┌─ 上回合操作反馈 ─────────────────────────────────────────────┐%s\n", Green, Reset)
@@ -2173,6 +2672,17 @@ func renderFrame(state *GameState) {
 		fmt.Printf("  原因: %s\n", advice.Reason)
 	}
 	fmt.Printf("%s└──────────────────────────────────────────────────────────────┘%s\n", Cyan, Reset)
+
+	// ── 实时市场动态 ──
+	fmt.Printf("\n%s┌────────────────────── 📰 实时市场动态 ──────────────────────┐%s\n", Yellow, Reset)
+	if len(state.MarketLogs) == 0 {
+		fmt.Printf("  %s(正在等待市场消息...)%s\n", Gray, Reset)
+	} else {
+		for _, log := range state.MarketLogs {
+			fmt.Printf("  %s\n", log)
+		}
+	}
+	fmt.Printf("%s└──────────────────────────────────────────────────────────────┘%s\n", Yellow, Reset)
 
 	// ── AI 图鉴 ──
 	fmt.Printf("\n%s┌────────────────────── 🤖 盘口AI图鉴 ────────────────────────┐%s\n", Cyan, Reset)
@@ -2326,6 +2836,65 @@ func renderTradeRecap(state *GameState) {
 		}
 	}
 }
+
+// 渲染操盘编年史
+func renderChronicle(state *GameState) {
+	fmt.Print("\033[H\033[2J") // 清屏
+	fmt.Println(Purple + "╔══════════════════════════════════════════════════════════════╗")
+	fmt.Println("║             操盘编年史 - 历史的每一刻                ║")
+	fmt.Println("╚══════════════════════════════════════════════════════════════╝" + Reset)
+
+	fmt.Printf("\n%s  %-8s %-12s %-10s %-8s %-15s %-10s%s\n",
+		Cyan, "时间", "价格", "涨跌", "玩家", "庄家动向", "市场情绪", Reset)
+	fmt.Println(Cyan + "  " + strings.Repeat("━", 75) + Reset)
+
+	for _, e := range state.Chronicle {
+		color := Reset
+		if e.Change > 0.03 {
+			color = Red
+		} else if e.Change < -0.03 {
+			color = Green
+		}
+
+		playerColor := Gray
+		if e.PlayerAction == "买入" || e.PlayerAction == "持仓" {
+			playerColor = Red
+		}
+
+		whaleColor := Reset
+		if e.WhaleAction == "拉升" || e.WhaleAction == "吸筹" {
+			whaleColor = Red
+		} else if e.WhaleAction == "砸盘" || e.WhaleAction == "洗盘" {
+			whaleColor = Green
+		}
+
+		moodColor := Reset
+		if e.MarketMood == "狂热" {
+			moodColor = Purple
+		} else if e.MarketMood == "恐慌" {
+			moodColor = Green
+		}
+
+		timeStr := fmt.Sprintf("D%d-%s", e.Day, e.Session)
+		fmt.Printf("  %-10s %s$%7.2f %s%7.1f%% %s%-6s %s%-12s %s%-10s%s\n",
+			timeStr,
+			Reset, e.Price,
+			color, e.Change*100,
+			playerColor, e.PlayerAction,
+			whaleColor, e.WhaleAction,
+			moodColor, e.MarketMood, Reset)
+
+		// 打印重要事件（如果是早盘）
+		if e.Session == "早盘" {
+			fmt.Printf("    %s[事件] %s%s\n", Gray, e.Event, Reset)
+		}
+	}
+
+	fmt.Println(Cyan + "\n  " + strings.Repeat("━", 75) + Reset)
+	fmt.Print("\n按回车键返回结算页面...")
+	bufio.NewReader(os.Stdin).ReadString('\n')
+}
+
 func renderGameOver(state *GameState) {
 	fmt.Println("\n" + Yellow + "==================== 终局审判 ====================" + Reset)
 	fmt.Printf(Cyan+"主题模式: %s\n"+Reset, CurrentTheme.Name)
@@ -2362,6 +2931,44 @@ func renderGameOver(state *GameState) {
 	}
 	fmt.Println(Yellow + "==================================================" + Reset)
 	renderTradeRecap(state)
+	// 零和财富掠夺报告
+	fmt.Println("\n" + Red + "💀 【修罗场·财富掠夺排行榜】 (零和博弈本质)" + Reset)
+	fmt.Printf("%-15s %-12s %-12s %-10s\n", "角色", "初始资产", "最终资产", "财富转移")
+	fmt.Println(strings.Repeat("-", 60))
+
+	// 将玩家和 AI 统一排序
+	type WealthEntry struct {
+		Name     string
+		Initial  float64
+		Final    float64
+		Transfer float64
+	}
+	ranking := []WealthEntry{
+		{"你 (Player)", state.InitialAsset, finalAsset, finalAsset - state.InitialAsset},
+	}
+	for _, ai := range state.AIs {
+		finalAI := ai.Cash + float64(ai.Shares)*state.Price - ai.MarginDebt
+		ranking = append(ranking, WealthEntry{
+			ai.Name, state.InitialAIAssets[ai.ID], finalAI, finalAI - state.InitialAIAssets[ai.ID],
+		})
+	}
+	sort.Slice(ranking, func(i, j int) bool { return ranking[i].Transfer > ranking[j].Transfer })
+
+	for _, e := range ranking {
+		color := Reset
+		title := "  "
+		if e.Transfer > 0 {
+			color = Red
+			title = "🏆" // 掠食者
+		} else if e.Transfer < 0 {
+			color = Green
+			title = "📉" // 猎物
+		}
+		fmt.Printf("%s%-15s %10.0f %10.0f %s%10.0f %s %s\n",
+			Reset, e.Name, e.Initial, e.Final, color, e.Transfer, title, Reset)
+	}
+	fmt.Println(strings.Repeat("-", 60))
+
 	rank := calculatePlayerRank(state)
 	finalProfit := (finalAsset - state.InitialAsset) / state.InitialAsset
 
@@ -2435,5 +3042,37 @@ func renderGameOver(state *GameState) {
 		fmt.Printf(Red+"\n⚠️ 保存战绩失败: %v\n"+Reset, err)
 	} else {
 		fmt.Println(Green + "\n✅ 战绩已保存到历史记录" + Reset)
+	}
+
+	// 检测并显示新成就
+	newAchievements := checkAchievements(state, rank)
+	if len(newAchievements) > 0 {
+		fmt.Println("\n" + Gold + "🎊 【成就解锁】 🎊" + Reset)
+		for _, ach := range newAchievements {
+			fmt.Printf("  %s⭐ %s%s: %s\n", Gold, ach.Name, Reset, ach.Description)
+		}
+		fmt.Println(Cyan + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + Reset)
+	}
+
+	for {
+		fmt.Println("\n" + Yellow + "请选择后续操作：" + Reset)
+		fmt.Println(" [1] 查看《操盘编年史》(全周期深度复盘)")
+		fmt.Println(" [2] 结束并返回主界面")
+		fmt.Print(Green + "\n请输入编号: " + Reset)
+
+		reader := bufio.NewReader(os.Stdin)
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+
+		if input == "1" {
+			renderChronicle(state)
+			// 看完编年史后重新显示结算总结，方便对比
+			fmt.Print("\033[H\033[2J")
+			fmt.Println(Cyan + "--- 已返回结算总结 ---" + Reset)
+			fmt.Printf("最终收益: %+.1f%% | 评级: %s%s%s\n", finalProfit*100, gradeColor, rank.Grade, Reset)
+			continue
+		} else {
+			break
+		}
 	}
 }
