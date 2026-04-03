@@ -1,0 +1,74 @@
+{
+  "records": [
+    {
+      "timestamp": "2026-04-02 23:53:12",
+      "theme": "科技股狂潮",
+      "final_profit": 0,
+      "grade": "B",
+      "score": 65,
+      "is_crashed": true,
+      "player_sold": true,
+      "sold_day": 1,
+      "sold_session": "早盘",
+      "profit_score": 5,
+      "timing_score": 30,
+      "risk_score": 30
+    },
+    {
+      "timestamp": "2026-04-02 23:50:49",
+      "theme": "贸易战惊魂",
+      "final_profit": -0.08470820392877322,
+      "grade": "B",
+      "score": 65,
+      "is_crashed": true,
+      "player_sold": true,
+      "sold_day": 1,
+      "sold_session": "尾盘",
+      "profit_score": 5,
+      "timing_score": 30,
+      "risk_score": 30
+    },
+    {
+      "timestamp": "2026-04-02 23:47:50",
+      "theme": "疫情黑天鹅",
+      "final_profit": -0.19276414484586776,
+      "grade": "B",
+      "score": 60,
+      "is_crashed": true,
+      "player_sold": true,
+      "sold_day": 1,
+      "sold_session": "尾盘",
+      "profit_score": 0,
+      "timing_score": 30,
+      "risk_score": 30
+    },
+    {
+      "timestamp": "2026-04-02 23:46:38",
+      "theme": "经典模式",
+      "final_profit": -0.9008208702539486,
+      "grade": "F",
+      "score": 0,
+      "is_crashed": true,
+      "player_sold": false,
+      "sold_day": 0,
+      "sold_session": "",
+      "profit_score": 0,
+      "timing_score": 0,
+      "risk_score": 0
+    },
+    {
+      "timestamp": "2026-04-02 23:23:46",
+      "theme": "经典模式",
+      "final_profit": -0.053227185248731254,
+      "grade": "B",
+      "score": 65,
+      "is_crashed": true,
+      "player_sold": true,
+      "sold_day": 8,
+      "sold_session": "早盘",
+      "profit_score": 5,
+      "timing_score": 30,
+      "risk_score": 30
+    }
+  ]
+}
