@@ -265,6 +265,9 @@ type AchievementData struct {
 	BustTimes       int                    `json:"bust_times"`
 	TotalSRanks     int                    `json:"total_sranks"`
 	ThemesMastered  map[string]bool        `json:"themes_mastered"` // 存储已获得A级及以上的主题
+	Level           int                    `json:"level"`           // 交易员等级
+	Experience      int                    `json:"experience"`      // 经验值
+	IntelPoints     int                    `json:"intel_points"`    // 情报点数 (可用于偷看底牌)
 }
 
 type TradePoint struct {
@@ -409,11 +412,22 @@ type GameState struct {
 	PlayerOrderCash   float64
 
 	TradePoints []TradePoint     // 上帝视角复盘记录点
-	MarketLogs  []string         // 实时市场动态日志
-	Chronicle   []ChronicleEntry // 操盘编年史
-	DailyFortune string           // 今日运势
+	MarketLogs     []string         // 实时市场动态日志
+	Chronicle      []ChronicleEntry // 操盘编年史
+	DailyFortune   string           // 今日运势
 	InitialAIAssets map[string]float64 // AI 初始资产
-}
+	IntelUsedThisTurn bool             // 本回合是否已使用情报
+	}
+
+	// 获取交易员头衔
+	func getTraderTitle(level int) string {
+	titles := []string{"", "新手韭菜", "入门散户", "资深股民", "职业交易员", "短线猎人", "趋势专家", "传奇作手", "市场主宰者"}
+	if level < len(titles) {
+		return titles[level]
+	}
+	return "无上庄家"
+	}
+
 
 // 添加市场日志
 func (s *GameState) AddLog(msg string) {
@@ -665,6 +679,11 @@ func loadAchievementData() AchievementData {
 		if data.ThemesMastered == nil {
 			data.ThemesMastered = make(map[string]bool)
 		}
+		if data.Level == 0 {
+			data.Level = 1
+		}
+	} else {
+		data.Level = 1
 	}
 
 	return data
@@ -697,6 +716,25 @@ func checkAchievements(state *GameState, rank PlayerRank) []Achievement {
 	if rank.Grade == "S" {
 		data.TotalSRanks++
 	}
+
+	// 经验值计算
+	xpGained := rank.Score * 5
+	if finalProfit > 0 {
+		xpGained += int(finalProfit * 1000)
+	}
+	if state.IsCrashed && state.PlayerShares == 0 {
+		xpGained += 200 // 逃顶奖
+	}
+	data.Experience += xpGained
+
+	// 升级逻辑
+	xpRequired := data.Level * 1000
+	if data.Experience >= xpRequired {
+		data.Level++
+		data.IntelPoints += 3 // 升级奖励情报点
+		fmt.Printf("\n%s🚀 【交易等级提升】 %s -> %s %s(获得3点情报点)%s\n", Yellow, getTraderTitle(data.Level-1), getTraderTitle(data.Level), Cyan, Reset)
+	}
+	fmt.Printf("\n%s📈 本场经验: +%d | 等级进度: %d/%d%s\n", Cyan, xpGained, data.Experience, xpRequired, Reset)
 
 	// 辅助函数：尝试解锁单次成就
 	unlock := func(id string) {
@@ -1143,6 +1181,10 @@ func main() {
 			if state.MarginDebt == 0 && (state.PlayerCash > 0 || state.PlayerShares > 0) {
 				fmt.Printf(Purple + "[8] 🎲配资3倍杠杆满仓！" + Reset)
 			}
+			data := loadAchievementData()
+			if data.IntelPoints > 0 && !state.IntelUsedThisTurn {
+				fmt.Printf(Cyan + "\n [9] 🕵️ 购买内幕情报 (消耗1点情报, 剩余%d点)" + Reset, data.IntelPoints)
+			}
 			fmt.Printf("\n" + Green + "请输入指令号: " + Reset)
 
 			var input string
@@ -1153,6 +1195,16 @@ func main() {
 					break
 				}
 				fmt.Print(Yellow + "  ⚠️  未输入，请输入编号后回车: " + Reset)
+			}
+
+			if input == "9" && data.IntelPoints > 0 && !state.IntelUsedThisTurn {
+				data.IntelPoints--
+				saveAchievementData(data)
+				state.IntelUsedThisTurn = true
+				state.LastActionMessage = fmt.Sprintf("🕵️ 【绝密内幕】 明天预测事件: %s (%s)", state.NextEvent.Title, state.NextEvent.Desc)
+				state.AddLog(fmt.Sprintf("%s 🕵️ 你动用关系获取了明天情报: %s%s", Cyan, state.NextEvent.Title, Reset))
+				renderFrame(state) // 刷新一次以显示日志
+				continue           // 继续本回合操作
 			}
 
 			switch input {
@@ -2258,6 +2310,7 @@ func processTurn(state *GameState) {
 	state.TotalBuyDemandShares += state.FakeBuyPressure
 	state.PriceHistory = append(state.PriceHistory, state.Price)
 	state.AddChronicle()
+	state.IntelUsedThisTurn = false // 重置情报使用状态
 	advanceTime(state)
 }
 
@@ -2553,13 +2606,14 @@ func renderFrame(state *GameState) {
 		profitColor = Red
 	}
 
+	data := loadAchievementData()
+	title := getTraderTitle(data.Level)
+
 	fmt.Printf("%s╔══════════════════════════════════════════════════════════════╗%s\n", Yellow, Reset)
-	fmt.Printf("%s║%s  第 %s%2d%s 天 [%s%s%s]  │  %s$%.2f %s %s(%+.2f%%)%s  │  净资产: %s$%.0f %s(%+.1f%%)%s\n",
-		Yellow, Reset,
-		Yellow, state.Day, Reset,
-		sessionColor, state.Session, Reset,
-		priceColor, state.Price, arrow, priceColor, change, Reset,
-		profitColor, netAsset, profitColor, assetProfit, Reset)
+	fmt.Printf("%s║%s  身份: %s%s (Lv.%d)%s  │  情报点: %d  │  第 %s%2d%s 天 [%s%s%s]\n",
+		Yellow, Reset, Cyan, title, data.Level, Reset, data.IntelPoints, Yellow, state.Day, Reset, sessionColor, state.Session, Reset)
+	fmt.Printf("%s║%s  现价: %s$%.2f %s (%+.2f%%)%s  │  净资产: %s$%.0f %s(%+.1f%%)%s\n",
+		Yellow, Reset, priceColor, state.Price, arrow, change, Reset, profitColor, netAsset, profitColor, assetProfit, Reset)
 	fmt.Printf("%s╚══════════════════════════════════════════════════════════════╝%s\n", Yellow, Reset)
 
 	// ── 今日运势 ──
@@ -2895,6 +2949,63 @@ func renderChronicle(state *GameState) {
 	bufio.NewReader(os.Stdin).ReadString('\n')
 }
 
+// 操盘手人格诊断
+func diagnoseTrader(state *GameState, rank PlayerRank) (string, string) {
+	// 维度1：风险偏好 (Risk Appetite)
+	riskAppetite := "稳健型"
+	if state.MarginDebt > 0 {
+		riskAppetite = "激进型"
+	}
+	if state.IsMarginCalled {
+		riskAppetite = "赌徒型"
+	}
+
+	// 维度2：持仓耐心 (Patience)
+	tradingCount := 0
+	for _, e := range state.Chronicle {
+		if e.PlayerAction == "买入" || e.PlayerAction == "卖出" {
+			tradingCount++
+		}
+	}
+	patience := "波段持仓"
+	if tradingCount > 10 {
+		patience = "频繁短线"
+	} else if tradingCount <= 2 {
+		patience = "长线格局"
+	}
+
+	// 维度3：执行力 (Execution)
+	execution := "随性交易"
+	if rank.RiskScore > 25 {
+		execution = "铁律执行"
+	} else if rank.RiskScore < 10 {
+		execution = "犹豫不决"
+	}
+
+	// 判定人格
+	archetype := "市场观察者"
+	description := "你对市场有基本的参与感，但尚未形成坚定的交易系统。"
+
+	if riskAppetite == "赌徒型" {
+		archetype = "【亡命之徒】"
+		description = "你极度迷恋杠杆，试图在一次波动中改变命运。建议：学会尊重市场，远离高利贷。"
+	} else if patience == "频繁短线" && rank.ProfitScore < 15 {
+		archetype = "【手续费贡献者】"
+		description = "你频繁进出，试图抓住每一个波动，却在摩擦成本中损耗了利润。建议：减少操作，等待大趋势。"
+	} else if patience == "长线格局" && rank.ProfitScore > 30 {
+		archetype = "【冷酷的狙击手】"
+		description = "你拥有极佳的耐心，能精准捕捉主升浪并格局到底。建议：保持节奏，你是天生的作手。"
+	} else if execution == "铁律执行" && state.IsCrashed && state.PlayerShares == 0 {
+		archetype = "【纪律捍卫者】"
+		description = "你对风险极度敏感，在危险来临前果断离场。建议：你的风控能力是你在修罗场生存的基石。"
+	} else if rank.Grade == "S" {
+		archetype = "【天选之子】"
+		description = "本局操作堪称教科书级别。无论行情如何，你总能站在赢家的一边。"
+	}
+
+	return archetype, description
+}
+
 func renderGameOver(state *GameState) {
 	fmt.Println("\n" + Yellow + "==================== 终局审判 ====================" + Reset)
 	fmt.Printf(Cyan+"主题模式: %s\n"+Reset, CurrentTheme.Name)
@@ -3019,6 +3130,13 @@ func renderGameOver(state *GameState) {
 
 	fmt.Println("\n  ━━━━━━━━━━━━━ 评语 ━━━━━━━━━━━━━")
 	fmt.Printf("  %s\n", rank.Comment)
+
+	// 操盘手人格诊断
+	archetype, diagDesc := diagnoseTrader(state, rank)
+	fmt.Println("\n  ━━━━━━━━━━━━━ 🧠 操盘手人格诊断 ━━━━━━━━━━━━━")
+	fmt.Printf("    人格画像: %s%s%s\n", Purple, archetype, Reset)
+	fmt.Printf("    专业建议: %s\n", diagDesc)
+
 	fmt.Println("\n" + Cyan + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" + Reset)
 
 	// 保存战绩到历史记录
