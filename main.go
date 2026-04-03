@@ -1983,6 +1983,8 @@ func main() {
 			time.Sleep(1000 * time.Millisecond)
 			processTurn(state)
 			fmt.Println("\n" + Cyan + strings.Repeat("-", 20) + " 本时段处理完毕 " + strings.Repeat("-", 20) + Reset)
+			fmt.Print(Yellow + "   >>> 按回车键进入下一阶段 <<< " + Reset)
+			waitEnter(reader)
 
 			// 捕获当前状态快照
 			snapshot := captureGameStateSnapshot(state)
@@ -2168,6 +2170,8 @@ func main() {
 		fmt.Printf("\n"+Blue+"  ⚡ 【%d天-%s】 %s === 玩家指令已提交，系统正在撮合 === %s"+Reset+"\n", state.Day, state.Session, Yellow, Reset)
 		processTurn(state)
 		fmt.Println("\n" + Green + strings.Repeat("=", 65) + Reset)
+		fmt.Print(Yellow + "   >>> 撮合已完成，确认后继续 <<< " + Reset)
+		waitEnter(reader)
 
 		// 捕获当前状态快照
 		snapshot := captureGameStateSnapshot(state)
@@ -4191,6 +4195,26 @@ func processTurn(state *GameState) {
 	totalBuyDemandShares := int(totalBuyCash / state.Price)
 	state.TotalBuyDemandShares = totalBuyDemandShares
 
+	// === 核心增强：引入做市商 (Market Maker) 机制 ===
+	// 目的：保证撮合成功，补足市场流动性缺口
+	marketMakerBuyShares := 0
+	marketMakerSellShares := 0
+
+	if totalBuyDemandShares > totalSellShares {
+		// 买单过多，做市商抛出筹码
+		marketMakerSellShares = totalBuyDemandShares - totalSellShares
+		totalSellShares = totalBuyDemandShares // 补平
+	} else if totalSellShares > totalBuyDemandShares {
+		// 卖单过多，做市商进场接盘
+		marketMakerBuyShares = totalSellShares - totalBuyDemandShares
+		totalBuyDemandShares = totalSellShares // 补平
+	}
+
+	if marketMakerBuyShares > 0 || marketMakerSellShares > 0 {
+		state.AddLog(fmt.Sprintf("%s[做市商介入]%s 补齐流动性缺口，确保撮合平衡", Yellow, Reset))
+	}
+	// ===========================================
+
 	if totalBuyDemandShares == 0 && totalSellShares == 0 {
 		state.Price = state.Price * (1.0 + (rand.Float64()*0.01 - 0.005))
 		state.AddChronicle()
@@ -4199,9 +4223,14 @@ func processTurn(state *GameState) {
 	}
 
 	// 4. 定价引擎
+	// 因为做市商已经补平，这里的 demandRatio 将趋于平衡或根据原始压力波动
+	// 为了保留股价波动，我们使用补平前的原始比例来决定价格走势
+	originalBuyShares := int(state.TotalBuyDemandCash / state.Price)
+	originalSellShares := state.TotalSellSupplyShares
+
 	demandRatio := 1.0
-	if totalSellShares > 0 {
-		demandRatio = float64(totalBuyDemandShares) / float64(totalSellShares)
+	if originalSellShares > 0 {
+		demandRatio = float64(originalBuyShares) / float64(originalSellShares)
 	} else {
 		demandRatio = 5.0
 	}
@@ -4226,20 +4255,16 @@ func processTurn(state *GameState) {
 	}
 
 	// 5. 撮合
-	var buyProration, sellProration float64 = 1.0, 1.0
-	realBuyExpectedShares := int(totalBuyCash / state.Price)
-	if realBuyExpectedShares > 0 && totalSellShares > 0 {
-		if realBuyExpectedShares > totalSellShares {
-			sellProration = 1.0
-			buyProration = float64(totalSellShares) / float64(realBuyExpectedShares)
-		} else {
-			buyProration = 1.0
-			sellProration = float64(realBuyExpectedShares) / float64(totalSellShares)
-		}
-	} else if realBuyExpectedShares <= 0 {
-		sellProration = 0.0
-	} else if totalSellShares <= 0 {
+	// 由于做市商已经补平了买卖缺口，确保了 totalBuyDemandShares == totalSellShares
+	// 因此，只要有交易发生，所有的买单和卖单成交比例都应该是 100%
+	buyProration, sellProration := 1.0, 1.0
+
+	// 如果出现极端情况（虽然由于之前的逻辑不太可能发生），做一次安全检查
+	if totalBuyDemandShares == 0 {
 		buyProration = 0.0
+	}
+	if totalSellShares == 0 {
+		sellProration = 0.0
 	}
 
 	// 6. 账户清算 (Fixing the Bug here)
@@ -4320,12 +4345,12 @@ func processTurn(state *GameState) {
 				ai.Shares += actualBuy
 				ai.Cost = (oldTotal + cost) / float64(ai.Shares)
 				ai.Cash -= cost
-			if ai.Type == "Whale" && actualBuy > 1000 {
-				state.SpeakLog(fmt.Sprintf("%s 🐋 游资进场: %s 抢筹 %d 股%s", Green, ai.Name, actualBuy, Reset))
-			}
-			if ai.StatusFlag == "Bailout" {
-				state.SpeakLog(fmt.Sprintf("%s 🛡️ 国家队救市: %s 开启无限额护盘%s", Red, ai.Name, Reset))
-			}
+				if ai.Type == "Whale" && actualBuy > 1000 {
+					state.SpeakLog(fmt.Sprintf("%s 🐋 游资进场: %s 抢筹 %d 股%s", Green, ai.Name, actualBuy, Reset))
+				}
+				if ai.StatusFlag == "Bailout" {
+					state.SpeakLog(fmt.Sprintf("%s 🛡️ 国家队救市: %s 开启无限额护盘%s", Red, ai.Name, Reset))
+				}
 			}
 			if ai.Type == "Whale" {
 				state.WhaleBuying += actualBuy
@@ -4362,7 +4387,7 @@ func processTurn(state *GameState) {
 		state.DayLow = state.Price
 	}
 	// 记录成交量 (撮合成功的总量)
-	turnVolume := int(float64(realBuyExpectedShares) * buyProration)
+	turnVolume := int(float64(state.TotalBuyDemandShares) * buyProration)
 	state.VolumeHistory = append(state.VolumeHistory, turnVolume)
 
 	state.AddChronicle()
@@ -5057,18 +5082,10 @@ func renderAIMoneyFlowRadar(state *GameState) {
 	activeRetails := 0
 
 	for _, ai := range state.AIs {
-		if ai.HasSold || ai.Shares == 0 {
-			// 已出货的AI计入资金流出
-			if ai.Type == "Whale" {
-				whaleOutflow += ai.Cash
-			} else if ai.Type == "Quant" {
-				quantOutflow += ai.Cash
-			} else {
-				retailOutflow += ai.Cash
-			}
-		} else {
-			// 持仓AI的市值算流入
-			marketValue := float64(ai.Shares) * state.Price
+		// 只有参与过交易或当前持仓的 AI 才纳入雷达统计
+		if ai.Shares > 0 {
+			// 【资金流入】场内持仓 AI 的持仓成本 (锁定在场内的资金)
+			marketValue := float64(ai.Shares) * ai.Cost
 			if ai.Type == "Whale" {
 				whaleInflow += marketValue
 				activeWhales++
@@ -5078,6 +5095,15 @@ func renderAIMoneyFlowRadar(state *GameState) {
 			} else {
 				retailInflow += marketValue
 				activeRetails++
+			}
+		} else if ai.HasSold {
+			// 【资金流出】只有已卖出并变现的 AI 才计入资金流出
+			if ai.Type == "Whale" {
+				whaleOutflow += ai.Cash
+			} else if ai.Type == "Quant" {
+				quantOutflow += ai.Cash
+			} else {
+				retailOutflow += ai.Cash
 			}
 		}
 	}
