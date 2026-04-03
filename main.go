@@ -420,9 +420,105 @@ type GameState struct {
 	DayHigh        float64          // 今日最高价
 	DayLow         float64          // 今日最低价
 	VolumeHistory  []int            // 成交量历史
-	}
-	// 获取交易员头衔
-	func getTraderTitle(level int) string {
+}
+
+// ===== 反身性分析系统 =====
+
+type ReflexivityMetrics struct {
+	SentimentPriceCorrelation float64 // -1 to 1: 情绪与价格相关性
+	PanicSellIntensity        float64 // 0-10: 恐慌性抛售强度
+	FOMOBuyIntensity          float64 // 0-10: FOMO追涨强度
+	WhaleHerdingEffect        float64 // 0-1: 大资金羊群效应
+	RetailChasingEffect       float64 // 0-1: 散户追涨效应
+	FundamentalDisconnect     float64 // 0-10: 价格与基本面脱节度
+	MomentumDecay             float64 // 动量衰减率
+
+	// 历史窗口数据
+	RecentPriceChanges    []float64
+	RecentSentimentScores []float64
+	RecentAIExitRatios    []float64
+	RecentWhaleActions    []string
+}
+
+type ReflexivitySignal struct {
+	Type        string  // "恐慌踩踏", "FOMO狂热", "大资金出逃", "散户接盘"
+	Strength    float64 // 0-10
+	Description string
+	IsBullish   bool
+}
+
+// ===== 贝叶斯概率引擎 =====
+
+type BayesianCrashModel struct {
+	Prior           float64            // 先验崩盘概率
+	Posterior       float64            // 后验崩盘概率
+	EvidenceWeights map[string]float64 // 证据权重
+	CurrentEvidence map[string]float64 // 当前证据值
+	CrashProbByDay  map[int]float64    // 各天崩盘概率分布
+}
+
+type BayesianReversalModel struct {
+	RecoveryProbability         float64 // 反转上涨概率
+	ContinuedDeclineProbability float64 // 继续下跌概率
+	OversoldIndicator           float64 // 超卖指标 (0-1)
+	VolumeExhaustion            float64 // 成交量枯竭度 (0-1)
+	WhaleReentrySignals         int     // 大资金回流信号数
+}
+
+type AIBehaviorModel struct {
+	TraderID        string
+	TraderType      string
+	ProbNextSell    float64  // 下回合卖出概率
+	ProbNextBuy     float64  // 下回合买入概率
+	ProbHold        float64  // 下回合持有概率
+	BehaviorHistory []string // 最近10次行为记录
+	ProfitThreshold float64  // 预估止盈阈值
+	FearThreshold   float64  // 预估恐慌阈值
+}
+
+type BayesianAnalysis struct {
+	CrashProbability       BayesianCrashModel
+	ExitTimingDistribution map[int]float64 // 天数 -> 最优离场概率
+	BestExitDay            int
+	BestExitConfidence     float64
+	ReversalProbability    BayesianReversalModel
+	AIBehaviorPrediction   map[string]*AIBehaviorModel
+}
+
+// ===== 高级分析输出 =====
+
+type AdvancedAnalysis struct {
+	BasicAdvice        StrategyAdvice
+	ReflexivityMetrics ReflexivityMetrics
+	ReflexivitySignals []ReflexivitySignal
+	BayesianAnalysis   BayesianAnalysis
+	OverallRiskScore   float64  // 0-100 综合风险
+	KeyInsights        []string // 核心洞察 (最多3条)
+}
+
+// ===== 历史状态缓存 =====
+
+type HistoricalStateCache struct {
+	States []GameStateSnapshot
+}
+
+type GameStateSnapshot struct {
+	Day                 int
+	Session             string
+	Price               float64
+	EscapedAIRatio      float64
+	WhaleEscapeCount    int
+	CrashWarningLevel   int
+	ConsecutiveFallDays int
+	EventSentiment      float64
+	EventFear           float64
+	PlayerAction        string
+	TotalBuyPressure    int
+	TotalSellPressure   int
+}
+
+// 获取交易员头衔
+func getTraderTitle(level int) string {
 	titles := []string{"", "新手韭菜", "入门散户", "资深股民", "职业交易员", "短线猎人", "趋势专家", "传奇作手", "市场主宰者"}
 	if level < len(titles) {
 		return titles[level]
@@ -1125,6 +1221,11 @@ func main() {
 
 	state := initGame(gameMode, maxDays, autoStrategy)
 
+	// 初始化历史状态缓存
+	histCache := &HistoricalStateCache{
+		States: []GameStateSnapshot{},
+	}
+
 	renderSplash()
 	fmt.Printf("       %s当前选择主题：%s%s%s\n", Cyan, Yellow, CurrentTheme.Name, Reset)
 	fmt.Printf("       %s【地狱修罗难度：全周期零和博弈】%s\n", Red, Reset)
@@ -1148,7 +1249,7 @@ func main() {
 			renderEventCard(state.CurrentEvent, true)
 		}
 		prevSession = state.Session
-		renderFrame(state)
+		renderFrame(state, histCache)
 
 		if state.Session == "盘中上午" || state.Session == "盘中下午" {
 			state.PlayerOrderType = ""
@@ -1158,6 +1259,13 @@ func main() {
 			fmt.Printf("\n"+Purple+"  🕰️ 【%s时段】你正在上班无法看盘，机构与量化正在暗流涌动火拼中..."+Reset+"\n", state.Session)
 			time.Sleep(1500 * time.Millisecond)
 			processTurn(state)
+
+			// 捕获当前状态快照
+			snapshot := captureGameStateSnapshot(state)
+			histCache.States = append(histCache.States, snapshot)
+			if len(histCache.States) > 20 {
+				histCache.States = histCache.States[1:] // 保留最近20个
+			}
 			continue
 		}
 
@@ -1205,7 +1313,7 @@ func main() {
 				state.IntelUsedThisTurn = true
 				state.LastActionMessage = fmt.Sprintf("🕵️ 【绝密内幕】 明天预测事件: %s (%s)", state.NextEvent.Title, state.NextEvent.Desc)
 				state.AddLog(fmt.Sprintf("%s 🕵️ 你动用关系获取了明天情报: %s%s", Cyan, state.NextEvent.Title, Reset))
-				renderFrame(state) // 刷新一次以显示日志
+				renderFrame(state, histCache) // 刷新一次以显示日志
 				continue           // 继续本回合操作
 			}
 
@@ -1281,6 +1389,13 @@ func main() {
 		}
 
 		processTurn(state)
+
+			// 捕获当前状态快照
+			snapshot := captureGameStateSnapshot(state)
+			histCache.States = append(histCache.States, snapshot)
+			if len(histCache.States) > 20 {
+			histCache.States = histCache.States[1:] // 保留最近20个
+			}
 	}
 
 	renderGameOver(state)
@@ -1719,6 +1834,822 @@ func generateStrategyAdvice(state *GameState) StrategyAdvice {
 	}
 
 	return advice
+}
+
+// ===== Phase 2: 反身性 + 贝叶斯分析函数 =====
+
+// 捕获当前游戏状态快照
+func captureGameStateSnapshot(state *GameState) GameStateSnapshot {
+	escapedCount := 0
+	whaleEscaped := 0
+	for _, ai := range state.AIs {
+		if ai.HasSold {
+			escapedCount++
+			if ai.Type == "Whale" {
+				whaleEscaped++
+			}
+		}
+	}
+	escapedRatio := float64(escapedCount) / float64(len(state.AIs))
+
+	playerAction := "空仓"
+	if state.PlayerShares > 0 {
+		playerAction = "持仓"
+	}
+	if state.PlayerOrderType == "Buy" {
+		playerAction = "买入"
+	} else if state.PlayerOrderType == "Sell" {
+		playerAction = "卖出"
+	}
+
+	return GameStateSnapshot{
+		Day:                 state.Day,
+		Session:             state.Session,
+		Price:               state.Price,
+		EscapedAIRatio:      escapedRatio,
+		WhaleEscapeCount:    whaleEscaped,
+		CrashWarningLevel:   state.CrashWarningLevel,
+		ConsecutiveFallDays: state.ConsecutiveFallDays,
+		EventSentiment:      state.CurrentEvent.Sentiment,
+		EventFear:           state.CurrentEvent.FearModifier,
+		PlayerAction:        playerAction,
+		TotalBuyPressure:    state.BuyPressure,
+		TotalSellPressure:   state.SellPressure,
+	}
+}
+
+// 计算反身性指标
+func calculateReflexivityMetrics(state *GameState, histCache *HistoricalStateCache) ReflexivityMetrics {
+	metrics := ReflexivityMetrics{}
+
+	if len(histCache.States) < 3 {
+		return metrics // 数据不足
+	}
+
+	// 提取历史数据
+	var prices, sentiments, exitRatios []float64
+	var whaleActions []string
+
+	for _, snap := range histCache.States {
+		prices = append(prices, snap.Price)
+		sentiments = append(sentiments, snap.EventSentiment)
+		exitRatios = append(exitRatios, snap.EscapedAIRatio)
+
+		// 推断whale行为
+		whaleAction := "观望"
+		if snap.WhaleEscapeCount > 0 {
+			whaleAction = "出货"
+		}
+		whaleActions = append(whaleActions, whaleAction)
+	}
+
+	// 保留最近10个数据点
+	if len(prices) > 10 {
+		prices = prices[len(prices)-10:]
+		sentiments = sentiments[len(sentiments)-10:]
+		exitRatios = exitRatios[len(exitRatios)-10:]
+		whaleActions = whaleActions[len(whaleActions)-10:]
+	}
+
+	metrics.RecentPriceChanges = prices
+	metrics.RecentSentimentScores = sentiments
+	metrics.RecentAIExitRatios = exitRatios
+	metrics.RecentWhaleActions = whaleActions
+
+	// 1. 计算情绪-价格相关性 (Pearson)
+	metrics.SentimentPriceCorrelation = calculatePearsonCorrelation(prices, sentiments)
+
+	// 2. 检测恐慌性抛售强度
+	metrics.PanicSellIntensity = calculatePanicIntensity(state, exitRatios)
+
+	// 3. 检测FOMO追涨强度
+	metrics.FOMOBuyIntensity = calculateFOMOIntensity(state, prices)
+
+	// 4. Whale羊群效应
+	metrics.WhaleHerdingEffect = calculateWhaleHerding(whaleActions)
+
+	// 5. 散户追涨效应
+	metrics.RetailChasingEffect = calculateRetailChasing(state, prices)
+
+	// 6. 基本面脱节度
+	openPrice := histCache.States[0].Price
+	currentPrice := state.Price
+	fairValue := openPrice // 简化：以开盘价为公允价值
+	metrics.FundamentalDisconnect = math.Abs(currentPrice-fairValue) / fairValue * 10
+	if metrics.FundamentalDisconnect > 10 {
+		metrics.FundamentalDisconnect = 10
+	}
+
+	// 7. 动量衰减
+	if len(prices) >= 5 {
+		recentMomentum := (prices[len(prices)-1] - prices[len(prices)-3]) / prices[len(prices)-3]
+		olderMomentum := (prices[len(prices)-3] - prices[len(prices)-5]) / prices[len(prices)-5]
+		metrics.MomentumDecay = olderMomentum - recentMomentum // 正值=动量衰减
+	}
+
+	return metrics
+}
+
+// Pearson相关系数计算
+func calculatePearsonCorrelation(x, y []float64) float64 {
+	if len(x) != len(y) || len(x) < 2 {
+		return 0
+	}
+
+	n := float64(len(x))
+	var sumX, sumY, sumXY, sumX2, sumY2 float64
+
+	for i := 0; i < len(x); i++ {
+		sumX += x[i]
+		sumY += y[i]
+		sumXY += x[i] * y[i]
+		sumX2 += x[i] * x[i]
+		sumY2 += y[i] * y[i]
+	}
+
+	numerator := n*sumXY - sumX*sumY
+	denominator := math.Sqrt((n*sumX2 - sumX*sumX) * (n*sumY2 - sumY*sumY))
+
+	if denominator == 0 {
+		return 0
+	}
+
+	return numerator / denominator
+}
+
+// 计算恐慌抛售强度
+func calculatePanicIntensity(state *GameState, exitRatios []float64) float64 {
+	intensity := 0.0
+
+	// 因子1: 连续下跌
+	if state.ConsecutiveFallDays >= 3 {
+		intensity += 4.0
+	} else if state.ConsecutiveFallDays >= 2 {
+		intensity += 2.0
+	}
+
+	// 因子2: AI逃跑加速
+	if len(exitRatios) >= 3 {
+		recentExit := exitRatios[len(exitRatios)-1]
+		olderExit := exitRatios[len(exitRatios)-3]
+		acceleration := (recentExit - olderExit) / 0.01 // 每1%加速度
+		intensity += math.Min(acceleration, 3.0)
+	}
+
+	// 因子3: 恐慌事件
+	if state.CurrentEvent.FearModifier > 2.5 {
+		intensity += 3.0
+	} else if state.CurrentEvent.FearModifier > 2.0 {
+		intensity += 1.5
+	}
+
+	if intensity > 10 {
+		intensity = 10
+	}
+	return intensity
+}
+
+// 计算FOMO追涨强度
+func calculateFOMOIntensity(state *GameState, prices []float64) float64 {
+	intensity := 0.0
+
+	// 因子1: 妖股狂热
+	if state.IsMonsterStock {
+		intensity += 5.0
+	}
+
+	// 因子2: 连涨天数
+	if state.ConsecutiveGrowthDays >= 3 {
+		intensity += 3.0
+	} else if state.ConsecutiveGrowthDays >= 2 {
+		intensity += 1.5
+	}
+
+	// 因子3: 情绪极度乐观
+	if state.CurrentEvent.Sentiment > 1.4 {
+		intensity += 2.0
+	} else if state.CurrentEvent.Sentiment > 1.3 {
+		intensity += 1.0
+	}
+
+	if intensity > 10 {
+		intensity = 10
+	}
+	return intensity
+}
+
+// 计算Whale羊群效应
+func calculateWhaleHerding(whaleActions []string) float64 {
+	if len(whaleActions) < 3 {
+		return 0
+	}
+
+	recent := whaleActions[len(whaleActions)-3:]
+	sellCount := 0
+	for _, action := range recent {
+		if action == "出货" {
+			sellCount++
+		}
+	}
+
+	return float64(sellCount) / float64(len(recent))
+}
+
+// 计算散户追涨效应
+func calculateRetailChasing(state *GameState, prices []float64) float64 {
+	// 简化：如果价格上涨且买压大于卖压，认为散户在追涨
+	if len(prices) < 2 {
+		return 0
+	}
+
+	priceRising := prices[len(prices)-1] > prices[len(prices)-2]
+	retailBuyingHigh := state.RetailBuying > state.RetailSelling
+
+	if priceRising && retailBuyingHigh {
+		return 0.8
+	} else if priceRising {
+		return 0.4
+	}
+
+	return 0.0
+}
+
+// 生成反身性信号
+func generateReflexivitySignals(metrics ReflexivityMetrics, state *GameState) []ReflexivitySignal {
+	signals := []ReflexivitySignal{}
+
+	// 信号1: 恐慌踩踏
+	if metrics.PanicSellIntensity > 7 && metrics.WhaleHerdingEffect > 0.6 {
+		signals = append(signals, ReflexivitySignal{
+			Type:        "恐慌踩踏",
+			Strength:    metrics.PanicSellIntensity,
+			Description: "大资金集体出逃引发连锁抛售，市场进入自我强化的下跌螺旋",
+			IsBullish:   false,
+		})
+	}
+
+	// 信号2: FOMO狂热
+	if metrics.FOMOBuyIntensity > 7 && metrics.RetailChasingEffect > 0.7 {
+		signals = append(signals, ReflexivitySignal{
+			Type:        "FOMO狂热",
+			Strength:    metrics.FOMOBuyIntensity,
+			Description: "散户疯狂追涨，情绪推动价格脱离基本面，泡沫风险积聚",
+			IsBullish:   false, // 短期看涨，但风险信号
+		})
+	}
+
+	// 信号3: 大资金出逃
+	if metrics.WhaleHerdingEffect > 0.8 {
+		signals = append(signals, ReflexivitySignal{
+			Type:        "大资金出逃",
+			Strength:    metrics.WhaleHerdingEffect * 10,
+			Description: "游资形成羊群效应，主力资金正在有序撤离",
+			IsBullish:   false,
+		})
+	}
+
+	// 信号4: 散户接盘
+	if metrics.RetailChasingEffect > 0.8 && metrics.WhaleHerdingEffect > 0.5 {
+		signals = append(signals, ReflexivitySignal{
+			Type:        "散户接盘",
+			Strength:    8.0,
+			Description: "散户高位追涨接盘，而大资金正在出货，典型的反身性陷阱",
+			IsBullish:   false,
+		})
+	}
+
+	// 信号5: 基本面严重脱节
+	if metrics.FundamentalDisconnect > 7 {
+		signals = append(signals, ReflexivitySignal{
+			Type:        "价格泡沫",
+			Strength:    metrics.FundamentalDisconnect,
+			Description: fmt.Sprintf("价格与基本面脱节度%.1f/10，反身性推动的泡沫", metrics.FundamentalDisconnect),
+			IsBullish:   false,
+		})
+	}
+
+	return signals
+}
+
+// 运行贝叶斯分析
+func runBayesianAnalysis(state *GameState, histCache *HistoricalStateCache, reflexMetrics ReflexivityMetrics) BayesianAnalysis {
+	analysis := BayesianAnalysis{}
+
+	// 1. 崩盘概率模型
+	analysis.CrashProbability = updateCrashProbability(state, reflexMetrics)
+
+	// 2. 最优离场时机
+	analysis.ExitTimingDistribution = make(map[int]float64)
+	analysis.BestExitDay, analysis.BestExitConfidence = calculateExitTiming(state, analysis.CrashProbability)
+
+	// 3. 价格反转概率
+	analysis.ReversalProbability = calculateReversalProbability(state, histCache)
+
+	// 4. AI行为预测
+	analysis.AIBehaviorPrediction = make(map[string]*AIBehaviorModel)
+	for _, ai := range state.AIs {
+		if ai.Type == "Whale" || (ai.Shares > 1000 && !ai.HasSold) {
+			analysis.AIBehaviorPrediction[ai.ID] = predictAIBehavior(ai, state)
+		}
+	}
+
+	return analysis
+}
+
+// 更新崩盘概率 (贝叶斯)
+func updateCrashProbability(state *GameState, reflexMetrics ReflexivityMetrics) BayesianCrashModel {
+	model := BayesianCrashModel{
+		EvidenceWeights: make(map[string]float64),
+		CurrentEvidence: make(map[string]float64),
+		CrashProbByDay:  make(map[int]float64),
+	}
+
+	// 先验概率 (根据主题难度)
+	model.Prior = 0.15 // 默认15%
+
+	// 证据与似然比
+	likelihoodRatios := []float64{}
+
+	// E1: AI逃跑比例
+	escapedCount := 0
+	for _, ai := range state.AIs {
+		if ai.HasSold {
+			escapedCount++
+		}
+	}
+	escapedRatio := float64(escapedCount) / float64(len(state.AIs))
+
+	if escapedRatio > 0.4 {
+		likelihoodRatios = append(likelihoodRatios, 3.0)
+	} else if escapedRatio > 0.2 {
+		likelihoodRatios = append(likelihoodRatios, 1.8)
+	} else {
+		likelihoodRatios = append(likelihoodRatios, 0.8)
+	}
+
+	// E2: 连续下跌天数
+	if state.ConsecutiveFallDays >= 3 {
+		likelihoodRatios = append(likelihoodRatios, 4.0)
+	} else if state.ConsecutiveFallDays == 2 {
+		likelihoodRatios = append(likelihoodRatios, 2.5)
+	}
+
+	// E3: 崩盘预警等级
+	if state.CrashWarningLevel >= 4 {
+		likelihoodRatios = append(likelihoodRatios, 5.0)
+	} else if state.CrashWarningLevel >= 3 {
+		likelihoodRatios = append(likelihoodRatios, 3.0)
+	} else if state.CrashWarningLevel >= 2 {
+		likelihoodRatios = append(likelihoodRatios, 1.5)
+	}
+
+	// E4: 恐慌情绪
+	if state.CurrentEvent.FearModifier > 2.5 {
+		likelihoodRatios = append(likelihoodRatios, 3.5)
+	} else if state.CurrentEvent.FearModifier > 2.0 {
+		likelihoodRatios = append(likelihoodRatios, 2.0)
+	}
+
+	// E5: 基本面脱节 (反身性)
+	if reflexMetrics.FundamentalDisconnect > 7 {
+		likelihoodRatios = append(likelihoodRatios, 2.5)
+	} else if reflexMetrics.FundamentalDisconnect > 4 {
+		likelihoodRatios = append(likelihoodRatios, 1.5)
+	}
+
+	// E6: 恐慌抛售强度 (反身性)
+	if reflexMetrics.PanicSellIntensity > 8 {
+		likelihoodRatios = append(likelihoodRatios, 4.0)
+	} else if reflexMetrics.PanicSellIntensity > 5 {
+		likelihoodRatios = append(likelihoodRatios, 2.0)
+	}
+
+	// 贝叶斯序贯更新
+	posterior := model.Prior
+	for _, lr := range likelihoodRatios {
+		posterior = (lr * posterior) / (lr*posterior + (1 - posterior))
+	}
+
+	// 限制范围
+	if posterior < 0.01 {
+		posterior = 0.01
+	}
+	if posterior > 0.99 {
+		posterior = 0.99
+	}
+
+	model.Posterior = posterior
+
+	// 计算各天崩盘概率分布
+	for d := state.Day + 1; d <= state.MaxDays; d++ {
+		dayDiff := d - state.Day
+		// 越接近后期，崩盘概率越高
+		timeFactor := 1.0 + float64(d-10)*0.1 // Day 10之后风险递增
+		if timeFactor < 0.5 {
+			timeFactor = 0.5
+		}
+		model.CrashProbByDay[d] = posterior * timeFactor * math.Pow(0.95, float64(dayDiff))
+	}
+
+	return model
+}
+
+// 计算最优离场时机
+func calculateExitTiming(state *GameState, crashModel BayesianCrashModel) (int, float64) {
+	utilities := make(map[int]float64)
+
+	currentAsset := float64(state.PlayerShares)*state.Price + state.PlayerCash
+
+	for d := state.Day + 1; d <= state.MaxDays; d++ {
+		// 预期收益
+		growthRate := 0.01 // 默认每天1%
+		if state.IsMonsterStock {
+			growthRate = 0.05
+		} else if state.CurrentEvent.Sentiment > 1.2 {
+			growthRate = 0.03
+		} else if state.CurrentEvent.Sentiment < 0.9 {
+			growthRate = -0.02
+		}
+
+		daysAhead := d - state.Day
+		expectedReturn := currentAsset * math.Pow(1+growthRate, float64(daysAhead))
+
+		// 累计崩盘风险
+		cumulativeCrashProb := 0.0
+		for day := state.Day + 1; day <= d; day++ {
+			if prob, ok := crashModel.CrashProbByDay[day]; ok {
+				cumulativeCrashProb += prob
+			}
+		}
+		if cumulativeCrashProb > 1.0 {
+			cumulativeCrashProb = 1.0
+		}
+
+		// 崩盘损失
+		crashLoss := currentAsset * 0.7 // 崩盘损失70%
+
+		// 效用 = 预期收益 - 风险损失
+		utility := expectedReturn*(1-cumulativeCrashProb) - crashLoss*cumulativeCrashProb
+		utilities[d] = utility
+	}
+
+	// Softmax转换为概率分布
+	maxUtility := -1e9
+	for _, u := range utilities {
+		if u > maxUtility {
+			maxUtility = u
+		}
+	}
+
+	expSum := 0.0
+	expValues := make(map[int]float64)
+	for d, u := range utilities {
+		expVal := math.Exp((u - maxUtility) / 1000) // 温度参数=1000
+		expValues[d] = expVal
+		expSum += expVal
+	}
+
+	bestDay := state.Day + 1
+	bestProb := 0.0
+
+	for d, expVal := range expValues {
+		prob := expVal / expSum
+		if prob > bestProb {
+			bestProb = prob
+			bestDay = d
+		}
+	}
+
+	return bestDay, bestProb
+}
+
+// 计算价格反转概率
+func calculateReversalProbability(state *GameState, histCache *HistoricalStateCache) BayesianReversalModel {
+	model := BayesianReversalModel{}
+
+	// 1. 超卖指标
+	if len(histCache.States) >= 5 {
+		highestPrice := 0.0
+		for _, snap := range histCache.States {
+			if snap.Price > highestPrice {
+				highestPrice = snap.Price
+			}
+		}
+
+		drawdown := (highestPrice - state.Price) / highestPrice
+		if drawdown > 0.3 {
+			model.OversoldIndicator = 1.0
+		} else if drawdown > 0.2 {
+			model.OversoldIndicator = 0.7
+		} else if drawdown > 0.1 {
+			model.OversoldIndicator = 0.4
+		}
+	}
+
+	// 2. 成交量枯竭
+	if len(histCache.States) >= 5 {
+		recentVolume := histCache.States[len(histCache.States)-1].TotalSellPressure
+		avgVolume := 0
+		for i := len(histCache.States) - 5; i < len(histCache.States)-1; i++ {
+			avgVolume += histCache.States[i].TotalSellPressure
+		}
+		avgVolume /= 4
+
+		if recentVolume < avgVolume/2 {
+			model.VolumeExhaustion = 0.8
+		} else if recentVolume < int(float64(avgVolume)*0.7) {
+			model.VolumeExhaustion = 0.5
+		}
+	}
+
+	// 3. Whale回流信号
+	for _, ai := range state.AIs {
+		if ai.Type == "Whale" && ai.HasSold && ai.Cash > 50000 {
+			model.WhaleReentrySignals++
+		}
+	}
+
+	// 贝叶斯更新
+	prior := 0.30
+	likelihoodRatios := []float64{}
+
+	if model.OversoldIndicator > 0.7 {
+		likelihoodRatios = append(likelihoodRatios, 3.0)
+	}
+	if model.VolumeExhaustion > 0.6 {
+		likelihoodRatios = append(likelihoodRatios, 2.5)
+	}
+	if model.WhaleReentrySignals >= 2 {
+		likelihoodRatios = append(likelihoodRatios, 2.0)
+	}
+	if state.ConsecutiveFallDays >= 3 {
+		likelihoodRatios = append(likelihoodRatios, 1.5) // 均值回归
+	}
+
+	posterior := prior
+	for _, lr := range likelihoodRatios {
+		posterior = (lr * posterior) / (lr*posterior + (1 - posterior))
+	}
+
+	model.RecoveryProbability = posterior
+	model.ContinuedDeclineProbability = math.Max(0, 0.8-posterior) // 剩余为横盘概率
+
+	return model
+}
+
+// 预测AI行为
+func predictAIBehavior(ai *AI, state *GameState) *AIBehaviorModel {
+	model := &AIBehaviorModel{
+		TraderID:   ai.ID,
+		TraderType: ai.Type,
+	}
+
+	if ai.HasSold {
+		// 已出货，不再预测
+		model.ProbHold = 1.0
+		return model
+	}
+
+	profitRatio := (state.Price - ai.Cost) / ai.Cost
+
+	// 根据AI类型预测
+	switch ai.SubType {
+	case "刺客": // Whale - 追求高利润快进快出
+		if profitRatio > ai.TargetProfit*0.8 {
+			model.ProbNextSell = 0.85
+		} else if state.CurrentEvent.FearModifier > 2.0 {
+			model.ProbNextSell = 0.80
+		} else {
+			model.ProbHold = 0.70
+		}
+		model.ProfitThreshold = ai.TargetProfit
+
+	case "打板": // Whale - 激进追涨
+		if state.IsMonsterStock {
+			model.ProbHold = 0.80
+		} else if profitRatio > 0.5 {
+			model.ProbNextSell = 0.75
+		} else {
+			model.ProbHold = 0.60
+		}
+
+	case "网格": // Quant - 高频网格交易
+		if profitRatio > 0.03 {
+			model.ProbNextSell = 0.60
+		} else if profitRatio < -0.03 {
+			model.ProbNextBuy = 0.70
+		} else {
+			model.ProbHold = 0.70
+		}
+
+	case "新韭": // Retail - 追涨杀跌
+		if state.IsMonsterStock {
+			model.ProbHold = 0.80
+		} else if profitRatio < -0.05 && state.ConsecutiveFallDays >= 2 {
+			model.ProbNextSell = 0.70 // 恐慌割肉
+		} else {
+			model.ProbHold = 0.60
+		}
+
+	case "国家队": // Institution - 稳定市场
+		if state.CrashWarningLevel >= 3 {
+			model.ProbNextBuy = 0.80 // 救市
+		} else {
+			model.ProbHold = 0.90
+		}
+
+	default:
+		model.ProbHold = 0.70
+	}
+
+	// 归一化
+	total := model.ProbNextSell + model.ProbNextBuy + model.ProbHold
+	if total > 0 {
+		model.ProbNextSell /= total
+		model.ProbNextBuy /= total
+		model.ProbHold /= total
+	}
+
+	return model
+}
+
+// 生成高级分析（整合反身性+贝叶斯）
+func generateAdvancedAnalysis(state *GameState, histCache *HistoricalStateCache) AdvancedAnalysis {
+	analysis := AdvancedAnalysis{}
+
+	// 1. 基础建议（保持原有逻辑）
+	analysis.BasicAdvice = generateStrategyAdvice(state)
+
+	// 2. 反身性分析
+	analysis.ReflexivityMetrics = calculateReflexivityMetrics(state, histCache)
+	analysis.ReflexivitySignals = generateReflexivitySignals(analysis.ReflexivityMetrics, state)
+
+	// 3. 贝叶斯分析
+	analysis.BayesianAnalysis = runBayesianAnalysis(state, histCache, analysis.ReflexivityMetrics)
+
+	// 4. 综合风险评分 (0-100)
+	riskScore := 0.0
+	riskScore += analysis.BayesianAnalysis.CrashProbability.Posterior * 40                                // 崩盘概率权重40%
+	riskScore += analysis.ReflexivityMetrics.PanicSellIntensity * 3                                       // 恐慌强度权重30%
+	riskScore += (1.0 - analysis.BayesianAnalysis.ReversalProbability.RecoveryProbability) * 30 // 反转概率权重30%
+
+	if riskScore > 100 {
+		riskScore = 100
+	}
+	analysis.OverallRiskScore = riskScore
+
+	// 5. 提炼核心洞察（最多3条）
+	insights := []string{}
+
+	// 洞察1: 最紧迫的风险
+	if analysis.BayesianAnalysis.CrashProbability.Posterior > 0.6 {
+		insights = append(insights, fmt.Sprintf("崩盘概率高达%.0f%%，强烈建议立即离场",
+			analysis.BayesianAnalysis.CrashProbability.Posterior*100))
+	} else if len(analysis.ReflexivitySignals) > 0 {
+		signal := analysis.ReflexivitySignals[0]
+		insights = append(insights, fmt.Sprintf("%s信号出现，市场进入反身性循环", signal.Type))
+	}
+
+	// 洞察2: 最优时机
+	if analysis.BayesianAnalysis.BestExitConfidence > 0.4 {
+		insights = append(insights, fmt.Sprintf("最佳离场窗口: 第%d天 (置信度%.0f%%)",
+			analysis.BayesianAnalysis.BestExitDay,
+			analysis.BayesianAnalysis.BestExitConfidence*100))
+	}
+
+	// 洞察3: AI行为预警
+	whaleSellCount := 0
+	for _, pred := range analysis.BayesianAnalysis.AIBehaviorPrediction {
+		if pred.ProbNextSell > 0.6 {
+			whaleSellCount++
+		}
+	}
+	if whaleSellCount >= 2 {
+		insights = append(insights, fmt.Sprintf("预测下回合将有%d个大资金出货", whaleSellCount))
+	} else if analysis.BayesianAnalysis.ReversalProbability.RecoveryProbability > 0.6 {
+		insights = append(insights, fmt.Sprintf("价格反转概率%.0f%%，存在抄底机会",
+			analysis.BayesianAnalysis.ReversalProbability.RecoveryProbability*100))
+	}
+
+	// 限制最多3条
+	if len(insights) > 3 {
+		insights = insights[:3]
+	}
+	analysis.KeyInsights = insights
+
+	return analysis
+}
+
+// 显示高级量化分析
+func displayAdvancedAnalysis(analysis AdvancedAnalysis) {
+	fmt.Printf("\n%s┌─────────── 🧠 高级量化分析 (反身性+贝叶斯) ───────────┐%s\n", Cyan, Reset)
+
+	// ===== 反身性信号 =====
+	if len(analysis.ReflexivitySignals) > 0 {
+		fmt.Printf("%s│%s  【反身性信号】\n", Cyan, Reset)
+		for _, signal := range analysis.ReflexivitySignals {
+			color := Red
+			icon := "⚠️"
+			if signal.IsBullish {
+				color = Green
+				icon = "✅"
+			}
+			fmt.Printf("%s│%s    %s %s%s%s (强度: %.1f/10)\n",
+				Cyan, Reset, icon, color, signal.Type, Reset, signal.Strength)
+			fmt.Printf("%s│%s       └─ %s\n", Cyan, Reset, signal.Description)
+		}
+	} else {
+		fmt.Printf("%s│%s  【反身性信号】%s 暂无明显反身性效应%s\n", Cyan, Reset, Green, Reset)
+	}
+
+	// ===== 贝叶斯概率分析 =====
+	fmt.Printf("%s│%s  【贝叶斯概率推演】\n", Cyan, Reset)
+	bayes := analysis.BayesianAnalysis
+
+	// 崩盘概率
+	crashProb := bayes.CrashProbability.Posterior * 100
+	crashColor := Green
+	crashLevel := "低风险"
+	if crashProb > 60 {
+		crashColor = Red
+		crashLevel = "极高风险"
+	} else if crashProb > 40 {
+		crashColor = Red
+		crashLevel = "高风险"
+	} else if crashProb > 25 {
+		crashColor = Yellow
+		crashLevel = "中等风险"
+	}
+
+	fmt.Printf("%s│%s    崩盘概率: %s%.1f%%%s (%s)\n",
+		Cyan, Reset, crashColor, crashProb, Reset, crashLevel)
+
+	// 最佳离场窗口
+	fmt.Printf("%s│%s    最佳离场窗口: %s第%d天%s (置信度: %.0f%%)\n",
+		Cyan, Reset, Yellow, bayes.BestExitDay, Reset, bayes.BestExitConfidence*100)
+
+	// 价格反转概率
+	recoveryProb := bayes.ReversalProbability.RecoveryProbability * 100
+	declineProb := bayes.ReversalProbability.ContinuedDeclineProbability * 100
+
+	fmt.Printf("%s│%s    价格反转概率: %s%.1f%%%s  |  继续下跌: %s%.1f%%%s\n",
+		Cyan, Reset, Green, recoveryProb, Reset, Red, declineProb, Reset)
+
+	// AI行为预测
+	if len(bayes.AIBehaviorPrediction) > 0 {
+		whaleNextSellCount := 0
+		for id, pred := range bayes.AIBehaviorPrediction {
+			if pred.ProbNextSell > 0.6 && pred.TraderType == "Whale" {
+				whaleNextSellCount++
+			}
+			// 显示详细AI预测（仅显示概率>0.6的）
+			if pred.ProbNextSell > 0.6 || pred.ProbNextBuy > 0.6 {
+				action := "卖出"
+				prob := pred.ProbNextSell * 100
+				actionColor := Red
+				if pred.ProbNextBuy > pred.ProbNextSell {
+					action = "买入"
+					prob = pred.ProbNextBuy * 100
+					actionColor = Green
+				}
+
+				// 简化ID显示
+				shortID := id
+				if len(id) > 8 {
+					shortID = id[:8]
+				}
+
+				fmt.Printf("%s│%s       • %s: %s%s%s概率%.0f%%\n",
+					Cyan, Reset, shortID, actionColor, action, Reset, prob)
+			}
+		}
+
+		if whaleNextSellCount > 0 {
+			fmt.Printf("%s│%s    ⚠️  预测下回合出货的大资金: %s%d 个%s\n",
+				Cyan, Reset, Red, whaleNextSellCount, Reset)
+		}
+	}
+
+	// ===== 核心洞察 =====
+	if len(analysis.KeyInsights) > 0 {
+		fmt.Printf("%s│%s  【核心洞察】\n", Cyan, Reset)
+		for i, insight := range analysis.KeyInsights {
+			fmt.Printf("%s│%s    %s%d. %s%s\n", Cyan, Reset, Yellow, i+1, insight, Reset)
+		}
+	}
+
+	// ===== 综合风险评分 =====
+	riskColor := Green
+	if analysis.OverallRiskScore > 70 {
+		riskColor = Red
+	} else if analysis.OverallRiskScore > 40 {
+		riskColor = Yellow
+	}
+
+	fmt.Printf("%s│%s  【综合风险评分】%s%.0f/100%s\n",
+		Cyan, Reset, riskColor, analysis.OverallRiskScore, Reset)
+
+	fmt.Printf("%s└───────────────────────────────────────────────────────┘%s\n", Cyan, Reset)
 }
 
 // 排名评级系统
@@ -2610,7 +3541,7 @@ func renderProgressBar(label string, val1, val2 int, color1, color2 string) stri
 	return fmt.Sprintf("%s [%s] %d:%d", label, bar, val1, val2)
 }
 
-func renderFrame(state *GameState) {
+func renderFrame(state *GameState, histCache *HistoricalStateCache) {
 	fmt.Print("\033[H\033[2J\033[3J") // 深度清屏（含滚动缓冲区）
 
 	// ── 环境氛围渲染 ──
@@ -2746,6 +3677,12 @@ func renderFrame(state *GameState) {
 		fmt.Printf("    原因: %s\n", advice.Reason)
 	}
 	fmt.Printf("%s└──────────────────────────────────────────────────────────────┘%s\n", Cyan, Reset)
+
+	// 显示高级分析（仅当历史数据足够且玩家持有股票时）
+	if state.PlayerShares > 0 && len(histCache.States) >= 3 {
+		advancedAnalysis := generateAdvancedAnalysis(state, histCache)
+		displayAdvancedAnalysis(advancedAnalysis)
+	}
 
 	// ── 实时动态 Feed ──
 	fmt.Printf("\n%s┌────────────────────── 📰 市场 Feed ──────────────────────────┐%s\n", Yellow, Reset)
