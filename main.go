@@ -4071,7 +4071,7 @@ func processTurn(state *GameState) {
 		state.CrashWarningLevel = max_int(state.CrashWarningLevel, 3)
 	}
 
-	// 2. AI 制定挂单决策
+	// === 2. AI 制定挂单决策 (增强版：叙事感知决策) ===
 	for _, ai := range state.AIs {
 		ai.OrderType = ""
 		ai.OrderShares = 0
@@ -4083,6 +4083,12 @@ func processTurn(state *GameState) {
 			profitRatio = state.Price / ai.Cost
 		}
 		eventFear := state.CurrentEvent.FearModifier
+
+		// 叙事同步约束：如果在中性或偏多环境下，且没有情节链动量，减少集体砸盘概率
+		narrativeBrake := 1.0
+		if (state.CurrentEvent.Category == Neutral || state.CurrentEvent.Category == MildOptimistic) && state.MarketMood > -10 {
+			narrativeBrake = 0.3 // 只有 30% 的概率执行由于获利导致的卖出
+		}
 
 		// === 特殊机制：庄家配资爆仓 ===
 		if ai.MarginDebt > 0 {
@@ -4170,10 +4176,10 @@ func processTurn(state *GameState) {
 			sellRatio := 0.0
 			if ai.Type == "Whale" {
 				if ai.SubType == "刺客" {
-					if profitRatio > activeTargetProfit {
+					if profitRatio > activeTargetProfit && rand.Float64() < narrativeBrake {
 						shouldSell = true
 						sellRatio = 1.0
-					} else if profitRatio > 1.1 && rand.Float64() < 0.3 {
+					} else if profitRatio > 1.1 && rand.Float64() < 0.3*narrativeBrake {
 						shouldSell = true
 						sellRatio = 0.4
 						ai.StatusFlag = "Shakeout"
@@ -4182,7 +4188,7 @@ func processTurn(state *GameState) {
 						sellRatio = 1.0
 					}
 				} else { // 机构长线
-					if profitRatio > activeTargetProfit {
+					if profitRatio > activeTargetProfit && rand.Float64() < narrativeBrake {
 						shouldSell = true
 						sellRatio = 0.5
 					}
@@ -4200,7 +4206,7 @@ func processTurn(state *GameState) {
 						ai.StatusFlag = "GridTrading"
 					}
 				} else {
-					if profitRatio > activeTargetProfit || rand.Float64() < 0.05 {
+					if profitRatio > activeTargetProfit && rand.Float64() < narrativeBrake {
 						shouldSell = true
 						sellRatio = 1.0
 					}
@@ -4208,7 +4214,7 @@ func processTurn(state *GameState) {
 			} else { // Retail
 				panicProb := activeFearBasis * eventFear * 0.05
 				if ai.SubType == "新韭" {
-					if profitRatio > activeTargetProfit && rand.Float64() < 0.6 {
+					if profitRatio > activeTargetProfit && rand.Float64() < 0.6*narrativeBrake {
 						shouldSell = true
 						sellRatio = 0.5
 					} else if profitRatio < 0.95 && priceChangePct < -0.05 && rand.Float64() < 0.7 {
@@ -4219,7 +4225,7 @@ func processTurn(state *GameState) {
 						sellRatio = 1.0
 					}
 				} else { // 老散
-					if profitRatio > activeTargetProfit && rand.Float64() < 0.8 {
+					if profitRatio > activeTargetProfit && rand.Float64() < 0.8*narrativeBrake {
 						shouldSell = true
 						sellRatio = 1.0
 					}
@@ -4312,6 +4318,24 @@ func processTurn(state *GameState) {
 	if state.Price < 0.1 {
 		state.Price = 0.1
 	}
+
+	// === 实时叙事适配 (Dynamic Narrative Adaptation) ===
+	if priceModifier < -0.05 {
+		state.CurrentEvent.Title = "⚠️ 市场突发跳水"
+		if priceModifier <= -0.09 {
+			state.CurrentEvent.Title = "💣 极端闪崩！跌停锁定"
+		}
+		state.CurrentEvent.Desc = "盘中突然爆出大规模抛压，多方防御瞬间瓦解。市场传闻大资金正在不计成本出逃。"
+		state.CurrentEvent.Category = ExtremePanic
+	} else if priceModifier > 0.05 {
+		state.CurrentEvent.Title = "🚀 盘中强势拉升"
+		if priceModifier >= 0.09 {
+			state.CurrentEvent.Title = "🔥 暴力反转！涨停封板"
+		}
+		state.CurrentEvent.Desc = "神秘买盘突然进场，卖单瞬间被扫光。主力资金疑似发起新一轮总攻。"
+		state.CurrentEvent.Category = ExtremeOptimistic
+	}
+
 
 	// 5. 撮合
 	// 由于做市商已经补平了买卖缺口，确保了 totalBuyDemandShares == totalSellShares
