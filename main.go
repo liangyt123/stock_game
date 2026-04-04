@@ -358,6 +358,36 @@ type ChronicleEntry struct {
 	MarketMood   string // "正常", "狂热", "恐慌"
 }
 
+// ===== 情节链 & 舆情 & 龙虎榜数据类型 =====
+
+// 情节链状态（带动能衰减）
+type EventChain struct {
+	ChainID     string  // 哪条链（如 "重组链", "监管链"）
+	StartDay    int     // 链条启动的天数
+	Momentum    int     // 剩余动能回合数（每回合-1，归零时链断裂）
+	TruthLevel  float64 // 0-1: 1=真利好会兑现，0=纯炒作泡沫
+	IsBullish   bool    // 链条方向（true=上涨链，false=下跌链）
+	Description string  // 链条描述（玩家可能从舆情中窥见）
+}
+
+// 舆情帖子
+type SocialPost struct {
+	Author     string  // 发布者角色名 (如 "江浙刺客游资", "散户007")
+	AuthorType string  // "whale"/"retail"/"noise"/"analyst"
+	Content    string  // 帖子内容
+	TruthLevel float64 // 0-1: 与真实情节链的吻合度（高=有参考价值）
+	IsNoise    bool    // 纯噪音（用于迷惑玩家）
+}
+
+// 龙虎榜席位记录
+type DragonTigerEntry struct {
+	Name     string  // 席位名称
+	Label    string  // 席位标签 (如 "章盟主", "拉萨天团")
+	BuyAmt   float64 // 买入金额
+	SellAmt  float64 // 卖出金额
+	IsPlayer bool    // 是否为玩家
+}
+
 type GameState struct {
 	Day                   int
 	Session               string // "早盘" 或 "尾盘"
@@ -425,6 +455,14 @@ type GameState struct {
 	IsEndgameMode    bool             // 是否为残局模式
 	EndgameScenario  *EndgameScenario // 残局场景信息
 	EndgameStartTurn int              // 残局开始时的总回合数
+
+	// ===== 情节链系统 =====
+	MarketMood      float64      // 市场情绪值 [-100, 100], 正=乐观, 负=悲观
+	ActiveChain     *EventChain  // 当前活跃的情节链（nil=无链）
+	SocialFeed      []SocialPost // 当前回合的舆情帖子（滚动显示）
+	DragonTigerList []DragonTigerEntry // 今日龙虎榜（尾盘结算后更新）
+	TurnBuyAmt      map[string]float64 // 本回合各席位买入金额（用于龙虎榜）
+	TurnSellAmt     map[string]float64 // 本回合各席位卖出金额（用于龙虎榜）
 }
 
 // ===== 反身性分析系统 =====
@@ -4248,6 +4286,9 @@ func processTurn(state *GameState) {
 		priceModifier = -0.10
 	}
 
+	// === 情节链/MarketMood 价格修正 ===
+	priceModifier += getMarketMoodPriceBonus(state)
+
 	state.LastPrice = state.Price
 	state.Price = state.Price * (1.0 + priceModifier)
 	if state.Price < 0.1 {
@@ -4337,6 +4378,8 @@ func processTurn(state *GameState) {
 			if ai.StatusFlag == "ForcedLiquidation" {
 				state.SpeakLog(fmt.Sprintf("%s 💥 爆仓强平: %s 资金链断裂被强制清场%s", Red, ai.Name, Reset))
 			}
+			// 龙虎榜记录
+			recordDragonTigerTrade(state, ai.Name, 0, float64(actualSell)*state.Price, false)
 		} else if ai.OrderType == "Buy" {
 			actualBuy := int(float64(int(ai.OrderCash/state.Price)) * buyProration)
 			cost := float64(actualBuy) * state.Price
@@ -4351,6 +4394,8 @@ func processTurn(state *GameState) {
 				if ai.StatusFlag == "Bailout" {
 					state.SpeakLog(fmt.Sprintf("%s 🛡️ 国家队救市: %s 开启无限额护盘%s", Red, ai.Name, Reset))
 				}
+				// 龙虎榜记录
+				recordDragonTigerTrade(state, ai.Name, cost, 0, false)
 			}
 			if ai.Type == "Whale" {
 				state.WhaleBuying += actualBuy
@@ -4392,6 +4437,21 @@ func processTurn(state *GameState) {
 
 	state.AddChronicle()
 	state.IntelUsedThisTurn = false // 重置情报使用状态
+
+	// === 情节链引擎更新 ===
+	updateMarketMood(state)    // 更新市场情绪
+	decayChainMomentum(state)  // 情节链动能衰减
+
+	// === 生成本回合舆情 ===
+	state.SocialFeed = generateSocialFeed(state)
+
+	// === 龙虎榜记录：玩家本回合成交 ===
+	if state.PlayerOrderType == "Buy" && state.LastActionMessage != "" {
+		recordDragonTigerTrade(state, "【玩家】", state.PlayerOrderCash, 0, true)
+	} else if state.PlayerOrderType == "Sell" && state.LastActionMessage != "" {
+		recordDragonTigerTrade(state, "【玩家】", 0, float64(state.PlayerOrderShares)*state.Price, true)
+	}
+
 	advanceTime(state)
 }
 
@@ -4403,13 +4463,20 @@ func advanceTime(state *GameState) {
 	} else if state.Session == "盘中下午" {
 		state.Session = "尾盘"
 	} else {
+		// === 尾盘 → 次日早盘：龙虎榜结算 ===
+		settleDragonTigerList(state)
+
 		state.Day++
 		state.Session = "早盘"
 		state.PlayerAvailableShares += state.PlayerFrozenShares
 		state.PlayerFrozenShares = 0
 		state.CurrentEvent = state.NextEvent
-		state.NextEvent = selectNextEventByMarkov(state.CurrentEvent, Events)
+		// 使用情节链感知的事件选择（替代原来的纯马尔科夫）
+		state.NextEvent = selectNextEventWithChain(state, Events)
 		state.AddLog(fmt.Sprintf("%s 💡 市场风向变化: %s%s%s", Purple, Yellow, state.CurrentEvent.Title, Reset))
+
+		// === 尝试触发情节链 ===
+		tryActivateChain(state)
 
 		// 生成今日运势
 		fortunes := []string{
@@ -4432,6 +4499,7 @@ func advanceTime(state *GameState) {
 			}
 			state.AddLog(fmt.Sprintf("%s 🕵️ 小道消息: %s%s", Cyan, rumors[state.NextEvent.Category], Reset))
 		}
+
 	}
 
 	// 杠杆爆仓检测
@@ -5486,11 +5554,14 @@ func renderFrame(state *GameState, histCache *HistoricalStateCache) {
 	// ── 动态风险热力图 ──
 	renderRiskHeatmap(state)
 
-	// ── 实时动态 Feed ──
-	fmt.Printf("\n%s┌────────────────────── 📰 市场 Feed ──────────────────────────┐%s\n", Yellow, Reset)
+	// ── 股吧舆情 Feed（情节链 + 情绪条 + 舆情帖）──
+	renderSocialFeed(state)
+
+	// ── 实时动态快讯（系统市场日志）──
+	fmt.Printf("\n%s┌────────────────────── 📰 市场快讯 ──────────────────────────┐%s\n", Yellow, Reset)
 	displayLogs := state.MarketLogs
-	if len(displayLogs) > 5 {
-		displayLogs = displayLogs[len(displayLogs)-5:]
+	if len(displayLogs) > 3 {
+		displayLogs = displayLogs[len(displayLogs)-3:]
 	}
 	for _, log := range displayLogs {
 		fmt.Printf("  %s\n", log)
@@ -5542,6 +5613,9 @@ func renderFrame(state *GameState, histCache *HistoricalStateCache) {
 			nameColor, ai.SubType, ai.Name, Reset, ai.Shares, statusStr, statusFlagStr, Gray, ai.LastOpinion, Reset)
 	}
 	fmt.Printf("%s└──────────────────────────────────────────────────────────────┘%s\n", Cyan, Reset)
+
+	// ── 龙虎榜（有数据时显示）──
+	renderDragonTigerList(state)
 }
 
 // 渲染战后复盘分析
