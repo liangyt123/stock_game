@@ -4535,6 +4535,17 @@ func advanceTime(state *GameState) {
 	if state.Day > state.MaxDays {
 		state.IsGameOver = true
 	}
+
+	// 残局模式：达到回合上限自动结束
+	if state.IsEndgameMode && state.EndgameScenario != nil {
+		currentTurn := calculateTurnNumberHelper(state.Day, state.Session)
+		elapsedTurns := currentTurn - state.EndgameStartTurn
+		if elapsedTurns >= state.EndgameScenario.TimeLimit {
+			state.IsGameOver = true
+			fmt.Printf("\n" + Yellow + ">>> 🏁 【挑战时间到】残局挑战已结束，正在进入结算汇报...%s\n", Reset)
+			time.Sleep(1500 * time.Millisecond)
+		}
+	}
 }
 
 func min_int(a, b int) int {
@@ -5392,6 +5403,9 @@ func renderEndgameHUD(state *GameState) {
 	// 时间警告
 	if progressPercent > 80 {
 		remainingTurns := totalTurns - elapsedTurns
+		if remainingTurns < 0 {
+			remainingTurns = 0
+		}
 		fmt.Printf("%s║%s  %s⚠️  警告: 仅剩 %d 回合！%s\n",
 			Purple, Reset, Red, remainingTurns, Reset)
 	}
