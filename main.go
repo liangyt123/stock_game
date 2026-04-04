@@ -2107,10 +2107,20 @@ func main() {
 			// 情报选项 (9)
 			if data.IntelPoints > 0 && !state.IntelUsedThisTurn {
 				menuItems = append(menuItems, MenuItem{
-					Label:       "内幕情报",
-					Description: fmt.Sprintf("剩余%d点", data.IntelPoints),
+					Label:       "明天内幕",
+					Description: fmt.Sprintf("1点(%d)", data.IntelPoints),
 					Value:       "9",
 					Icon:        "🕵️",
+				})
+			}
+
+			// 情节链情报选项 (0)
+			if data.IntelPoints >= 2 && state.ActiveChain != nil && !state.IntelUsedThisTurn {
+				menuItems = append(menuItems, MenuItem{
+					Label:       "情节链情报",
+					Description: fmt.Sprintf("2点(%d)", data.IntelPoints),
+					Value:       "0",
+					Icon:        "🔍",
 				})
 			}
 
@@ -2124,12 +2134,19 @@ func main() {
 				input = "1"
 			}
 
-			if input == "9" && data.IntelPoints > 0 && !state.IntelUsedThisTurn {
-				data.IntelPoints--
-				saveAchievementData(data)
-				state.IntelUsedThisTurn = true
-				state.LastActionMessage = fmt.Sprintf("🕵️ 【绝密内幕】 明天预测事件: %s (%s)", state.NextEvent.Title, state.NextEvent.Desc)
-				state.AddLog(fmt.Sprintf("%s 🕵️ 你动用关系获取了明天情报: %s%s", Cyan, state.NextEvent.Title, Reset))
+			if (input == "9" || input == "0") && data.IntelPoints > 0 && !state.IntelUsedThisTurn {
+				if input == "9" {
+					data.IntelPoints--
+					saveAchievementData(data)
+					state.IntelUsedThisTurn = true
+					state.LastActionMessage = fmt.Sprintf("🕵️ 【明天内幕】 预测事件: %s (%s)", state.NextEvent.Title, state.NextEvent.Desc)
+					state.AddLog(fmt.Sprintf("%s 🕵️ 你获取了明天情报: %s%s", Cyan, state.NextEvent.Title, Reset))
+				} else if input == "0" && data.IntelPoints >= 2 && state.ActiveChain != nil {
+					// 情节链情报
+					intelResult := useIntelOnChain(state)
+					state.LastActionMessage = intelResult
+					state.AddLog(fmt.Sprintf("%s 🔍 你动用深度关系解析了 [%s] 情节链%s", Purple, state.ActiveChain.ChainID, Reset))
+				}
 				renderFrame(state, histCache) // 刷新一次以显示日志
 				continue                      // 继续本回合操作
 			}
