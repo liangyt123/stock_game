@@ -77,7 +77,7 @@ func RunSolverCLI() {
 			fmt.Print("\033[H\033[2J") // 清屏
 			RunReplayAnalyzer()
 			fmt.Printf("\n%s按回车键继续...%s ", Cyan, Reset)
-			reader.ReadString('\n')
+			waitEnter(reader) // 使用全局等待回车函数
 			fmt.Print("\033[H\033[2J") // 清屏
 			continue
 		}
@@ -111,7 +111,7 @@ func RunSolverCLI() {
 
 		// 等待用户查看结果
 		fmt.Printf("\n%s按回车键继续...%s ", Cyan, Reset)
-		reader.ReadString('\n')
+		waitEnter(reader) // 使用更健壮的等待控制
 		fmt.Print("\033[H\033[2J") // 清屏
 	}
 }

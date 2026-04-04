@@ -5814,7 +5814,7 @@ func renderChronicle(state *GameState) {
 
 	fmt.Println(Cyan + "\n  " + strings.Repeat("━", 75) + Reset)
 	fmt.Print("\n按回车键返回结算页面...")
-	bufio.NewReader(os.Stdin).ReadString('\n')
+	waitEnter(nil)
 }
 
 // 操盘手人格诊断

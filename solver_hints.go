@@ -68,7 +68,7 @@ func (h *ProgressiveHintSystem) RunProgressiveHints() {
 	h.showReasonAnalysis()
 
 	fmt.Printf("\n%s按回车键继续...%s ", Cyan, Reset)
-	h.Reader.ReadString('\n')
+	waitEnter(h.Reader)
 }
 
 // displayMarketState 显示当前市场状态
