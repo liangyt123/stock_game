@@ -294,10 +294,29 @@ func (s *EndgameSolver) predictPriceChanges(state *SolverState) []priceChangePro
 	flatProb /= total
 	downProb /= total
 
+	// 重要：根据场景事件的情绪值 (Sentiment) 动态调整步幅
+	// 如果事件情绪极佳 (Sentiment > 1.2), 涨幅从 5% 提升到 8%
+	stepSize := 0.05
+	if s.Scenario.EventPreset != nil {
+		if s.Scenario.EventPreset.Sentiment > 1.2 {
+			stepSize = 0.08
+			upProb += 0.1 // 增加上涨权重
+		} else if s.Scenario.EventPreset.Sentiment > 1.05 {
+			stepSize = 0.06
+			upProb += 0.05
+		}
+		
+		// 再次归一化
+		norm := upProb + flatProb + downProb
+		upProb /= norm
+		flatProb /= norm
+		downProb /= norm
+	}
+
 	return []priceChangeProbability{
-		{changeRate: 0.05, probability: upProb},   // 涨5%
-		{changeRate: 0.0, probability: flatProb},  // 持平
-		{changeRate: -0.05, probability: downProb}, // 跌5%
+		{changeRate: stepSize, probability: upProb},   // 动态涨幅
+		{changeRate: 0.0, probability: flatProb},      // 持平
+		{changeRate: -stepSize, probability: downProb}, // 动态跌幅
 	}
 }
 
@@ -379,8 +398,10 @@ func (s *EndgameSolver) evaluateTerminalValue(state *SolverState) float64 {
 	// 计算最终资产
 	totalAsset := float64(state.PlayerShares)*state.Price + state.PlayerCash - state.MarginDebt
 
-	// 初始资产
-	initialAsset := float64(s.Scenario.PlayerShares)*s.Scenario.InitialPrice +
+	// 初始资产同步：使用游戏统一的 $10.0 平均成本作为基准
+	// 这样 solver 的目标评估将与 main.go 的 HUD 完全对齐
+	const defaultAvgCost = 10.0
+	initialAsset := float64(s.Scenario.PlayerShares)*defaultAvgCost +
 		s.Scenario.PlayerCash - s.Scenario.MarginDebt
 
 	// 收益率
