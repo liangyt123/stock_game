@@ -5332,12 +5332,18 @@ func renderEndgameHUD(state *GameState) {
 	if progressPercent > 100 {
 		progressPercent = 100
 	}
+	if progressPercent < 0 {
+		progressPercent = 0
+	}
 
 	// 进度条渲染
 	barWidth := 30
 	filledWidth := int(progressPercent / 100 * float64(barWidth))
 	if filledWidth > barWidth {
 		filledWidth = barWidth
+	}
+	if filledWidth < 0 {
+		filledWidth = 0
 	}
 
 	progressColor := Green
