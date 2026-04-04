@@ -3512,11 +3512,11 @@ func predictAIBehavior(ai *AI, state *GameState) *AIBehaviorModel {
 // 辅助函数：将Session转换为整数（用于缓存key）
 func sessionToInt(session string) int {
 	switch session {
-	case "集合竞价":
-		return 0
 	case "早盘":
-		return 1
+		return 0
 	case "午盘":
+		return 1
+	case "下午":
 		return 2
 	case "尾盘":
 		return 3
@@ -3527,7 +3527,7 @@ func sessionToInt(session string) int {
 
 // 辅助函数：计算总回合数
 func calculateTurnNumber(day int, session string) int {
-	// 每天4个session（集合竞价、早盘、午盘、尾盘）
+	// 每天4个session（早盘、午盘、下午、尾盘）
 	baseTurns := (day - 1) * 4
 	sessionTurn := sessionToInt(session)
 	return baseTurns + sessionTurn
@@ -4475,10 +4475,10 @@ func processTurn(state *GameState) {
 
 func advanceTime(state *GameState) {
 	if state.Session == "早盘" {
-		state.Session = "盘中上午"
-	} else if state.Session == "盘中上午" {
-		state.Session = "盘中下午"
-	} else if state.Session == "盘中下午" {
+		state.Session = "午盘"
+	} else if state.Session == "午盘" {
+		state.Session = "下午"
+	} else if state.Session == "下午" {
 		state.Session = "尾盘"
 	} else {
 		// === 尾盘 → 次日早盘：龙虎榜结算 ===
@@ -5339,12 +5339,14 @@ func renderEndgameHUD(state *GameState) {
 	// 计算进度
 	currentTurn := calculateTurnNumberHelper(state.Day, state.Session)
 	elapsedTurns := currentTurn - state.EndgameStartTurn
+	if elapsedTurns < 0 {
+		elapsedTurns = 0
+	}
 	totalTurns := scenario.TimeLimit
 	progressPercent := float64(elapsedTurns) / float64(totalTurns) * 100
 	if progressPercent > 100 {
 		progressPercent = 100
-	}
-	if progressPercent < 0 {
+	} else if progressPercent < 0 {
 		progressPercent = 0
 	}
 
