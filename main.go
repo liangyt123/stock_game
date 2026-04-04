@@ -2385,7 +2385,8 @@ func initEndgameState(scenario *EndgameScenario) *GameState {
 
 	// 初始化缺失的关键字段
 	state.TotalMarketShares = 100000 // 全服流通盘
-	state.InitialAsset = float64(state.PlayerShares)*state.Price + state.PlayerCash - state.MarginDebt
+	// 使用平均成本计算基准资产，以便 HUD 显示正确的盈利百分比
+	state.InitialAsset = float64(state.PlayerShares)*state.PlayerAvgCost + state.PlayerCash - state.MarginDebt
 
 	// 初始化历史数据（模拟之前的数据）
 	state.PriceHistory = []float64{scenario.InitialPrice}
