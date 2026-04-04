@@ -41,20 +41,38 @@ func RunReplayAnalyzer() {
 	fmt.Printf("%s这个工具帮你对比自己的操作和AI最优解，找出差距%s\n", Cyan, Reset)
 	fmt.Println()
 
-	// 选择场景
-	fmt.Printf("%s请选择你刚才玩的场景 (1-16): %s", Green, Reset)
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
+	// 使用交互式菜单选择场景
+	items := make([]MenuItem, len(EndgameScenarios)+1)
+	for i, scenario := range EndgameScenarios {
+		diffIcon := "🟢"
+		if scenario.Difficulty == "中等" {
+			diffIcon = "🟡"
+		} else if scenario.Difficulty == "困难" {
+			diffIcon = "🔴"
+		} else if scenario.Difficulty == "地狱" {
+			diffIcon = "💀"
+		}
 
-	sceneNum, err := strconv.Atoi(input)
-	if err != nil || sceneNum < 1 || sceneNum > len(EndgameScenarios) {
-		fmt.Printf("%s无效的场景编号%s\n", Red, Reset)
+		items[i] = MenuItem{
+			Label:       scenario.Name,
+			Description: fmt.Sprintf("%s %s | 目标: +%.0f%% | %d时段", diffIcon, scenario.Difficulty, scenario.TargetProfit*100, scenario.TimeLimit),
+			Value:       fmt.Sprintf("%d", i+1),
+		}
+	}
+	items[len(EndgameScenarios)] = MenuItem{Label: "放弃复盘", Value: "0", Icon: "↩️"}
+
+	menu := NewInteractiveMenu("请选择你刚才挑战的场景：", items)
+	menu.Reader = reader
+	value, _ := menu.Show()
+
+	if value == "" || value == "0" {
 		return
 	}
 
+	sceneNum, _ := strconv.Atoi(value)
 	scenario := &EndgameScenarios[sceneNum-1]
 
-	fmt.Printf("\n%s场景: %s%s%s\n", Yellow, Cyan, scenario.Name, Reset)
+	fmt.Printf("\n%s已选择场景: %s%s%s\n", Yellow, Cyan, scenario.Name, Reset)
 
 	// 询问最终结果
 	fmt.Printf("\n%s你的最终收益率是多少？(输入数字，如 15 表示+15%%): %s", Green, Reset)

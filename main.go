@@ -1561,22 +1561,23 @@ func showSettingsMenu(reader *bufio.Reader) {
 		fmt.Println("╚══════════════════════════════════════════════════════╝" + Reset)
 		fmt.Println()
 
-		// 显示当前设置
-		fmt.Println(Yellow + "【当前设置】" + Reset)
-		fmt.Printf("  [1] 高级分析显示: %s\n", boolToOnOff(GlobalSettings.ShowAdvancedAnalysis))
-		fmt.Printf("  [2] 分析详细度: %s (%s)\n", GlobalSettings.AnalysisDetail, detailLevelDesc(GlobalSettings.AnalysisDetail))
-		fmt.Printf("  [3] 教学提示: %s\n", boolToOnOff(GlobalSettings.ShowEducation))
-		fmt.Println()
-		fmt.Println(Green + "  [0] 返回主菜单" + Reset)
-		fmt.Println()
-		fmt.Print(Green + "请选择要修改的设置项 (0-3): " + Reset)
+		// 使用交互式菜单
+		items := []MenuItem{
+			{Label: "高级分析显示", Description: fmt.Sprintf("当前: %s", boolToOnOff(GlobalSettings.ShowAdvancedAnalysis)), Value: "1", Icon: "🔍"},
+			{Label: "分析详细度", Description: fmt.Sprintf("当前: %s (%s)", GlobalSettings.AnalysisDetail, detailLevelDesc(GlobalSettings.AnalysisDetail)), Value: "2", Icon: "📊"},
+			{Label: "教学提示", Description: fmt.Sprintf("当前: %s", boolToOnOff(GlobalSettings.ShowEducation)), Value: "3", Icon: "🎓"},
+			{Label: "返回主菜单", Description: "", Value: "0", Icon: "↩️"},
+		}
 
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
+		menu := NewInteractiveMenu("⚙️ 游戏设置", items)
+		menu.Reader = reader
+		input, _ := menu.Show()
+
+		if input == "" || input == "0" {
+			return // 返回主菜单
+		}
 
 		switch input {
-		case "0":
-			return // 返回主菜单
 		case "1":
 			GlobalSettings.ShowAdvancedAnalysis = !GlobalSettings.ShowAdvancedAnalysis
 			if GlobalSettings.ShowAdvancedAnalysis {
@@ -6204,13 +6205,14 @@ func renderGameOver(state *GameState, reader *bufio.Reader) {
 	}
 
 	for {
-		fmt.Println("\n" + Yellow + "请选择后续操作：" + Reset)
-		fmt.Println(" [1] 查看《操盘编年史》(全周期深度复盘)")
-		fmt.Println(" [2] 结束并返回主界面")
-		fmt.Print(Green + "\n请输入编号: " + Reset)
+		items := []MenuItem{
+			{Label: "查看《操盘编年史》", Description: "全周期深度复盘各时段操作与大资金动向", Value: "1", Icon: "📜"},
+			{Label: "结束并返回主界面", Description: "回到主菜单开始新的对局", Value: "2", Icon: "退出"},
+		}
 
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
+		menu := NewInteractiveMenu("请选择后续操作：", items)
+		menu.Reader = reader
+		input, _ := menu.Show()
 
 		if input == "1" {
 			renderChronicle(state)

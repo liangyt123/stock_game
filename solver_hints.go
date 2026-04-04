@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"strings"
 )
 
 // ============================================================
@@ -458,15 +457,18 @@ func RunInteractiveSolver(scenarioIndex int) {
 	result := solver.Solve()
 	fmt.Printf("%s完成！%s\n", Green, Reset)
 
-	// 选择模式
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("\n%s请选择模式:%s\n", Yellow, Reset)
-	fmt.Println("  [1] 渐进式提示（引导思考）")
-	fmt.Println("  [2] 直接查看完整答案")
-	fmt.Printf("\n%s请输入 (1-2): %s", Green, Reset)
+	// 使用交互式菜单选择模式
+	modeItems := []MenuItem{
+		{Label: "渐进式提示（引导思考）", Description: "通过三级提示引导你分析盘面，适合学习", Value: "1", Icon: "🎓"},
+		{Label: "直接查看完整答案", Description: "立即显示 AI 计算出的最优操作序列", Value: "2", Icon: "📊"},
+	}
 
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
+	modeMenu := NewInteractiveMenu("请选择求解模式:", modeItems)
+	input, _ := modeMenu.Show()
+
+	if input == "" {
+		input = "2" // 默认显示答案
+	}
 
 	if input == "1" {
 		// 渐进式提示模式 - 选择一个关键回合进行提示
