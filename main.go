@@ -1916,15 +1916,19 @@ func main() {
 	fmt.Print("\033[H\033[2J\033[3J") // 程序刚启动时大清屏
 	reader := bufio.NewReader(os.Stdin)
 
-	// 选择游戏模式
-	gameMode, maxDays, autoStrategy := selectGameMode(reader)
+	// 全局主循环：支持在游戏结束后返回主菜单或退出
+	for {
+		fmt.Print("\033[H\033[2J\033[3J") // 每次返回主循环大清屏
 
-	// 选择主题模式
-	CurrentTheme = selectTheme(reader)
-	Events = CurrentTheme.Events
+		// 1. 选择游戏基础配置
+		gameMode, maxDays, autoStrategy := selectGameMode(reader)
 
-	// 询问是否查看历史战绩或成就
-	var selectedEndgame *EndgameScenario
+		// 2. 选择主题模式
+		CurrentTheme = selectTheme(reader)
+		Events = CurrentTheme.Events
+
+		// 3. 主菜单交互
+		var selectedEndgame *EndgameScenario
 	for {
 		// 每次返回主菜单时大清屏，确保干净
 		fmt.Print("\033[H\033[2J\033[3J")
@@ -1938,15 +1942,17 @@ func main() {
 			{Label: "残局挑战", Value: "4", Icon: "🎯"},
 			{Label: "AI求解器 (动态规划寻优)", Value: "5", Icon: "🤖"},
 			{Label: "直接开始游戏", Value: "6", Icon: "🎮"},
+			{Label: "退出游戏", Value: "quit", Icon: "🚪"},
 		}
 
 		menu := NewInteractiveMenu("欢迎来到妖股搏杀！请选择操作：", items)
 		menu.Reader = reader
 		value, _ := menu.Show()
 
-		if value == "" {
-			// ESC退出
-			break
+		if value == "" || value == "quit" {
+			// ESC 或 选择退出
+			fmt.Println("\n感谢游玩《妖股搏杀》，再见！")
+			os.Exit(0)
 		}
 
 		switch value {
@@ -2241,6 +2247,7 @@ func main() {
 
 	// 生成复盘报告
 	generatePostGameReport(state, histCache)
+	}
 }
 
 // 辅助函数：计算总回合数（用于残局进度追踪）
